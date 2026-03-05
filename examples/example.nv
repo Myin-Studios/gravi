@@ -1,0 +1,56 @@
+class Example
+{
+    !GPU pub member: f64; // public GPU member without any specified value (error at compile time if it's used without assignment before)
+    member2: f32 = 3.45; // private (by default) CPU member with specified value
+    
+    pub fun New() // reserved function (without, the class will be considered non-declarable as variable -> used for interfaces only)
+    {
+        self
+        {
+            member = 1.3, // assignment, no errors
+            .. // other previously assigned members
+        }
+    }
+}
+
+pub class Derived ext Example // Derived extends Example
+{
+    pub otherMember: i32 = 3;
+    pub uninitializedMember: i64;
+
+    pub fun New()
+    {
+        self
+        {
+            super(/* parameters if there are */),
+            otherMember = 5, // value override
+            .. // compile-time error: user must define every member
+        }
+    }
+
+    !GPU pub fun Method(p1: type /* whatever type that should be here */): type2 // returned type. NOTE: GPU functions/methods should handle GPU types only!
+    {
+        // code...
+    }
+}
+
+fun main()
+{
+    var v1: Example = Derived::New(); // error: confused compiler: declared and assigned type should correspond!
+    mut var v2: Derived = Example::New(); // error: confused compiler: declared and assigned type should correspond! (with mutable variable example)
+
+    var v3: Derived = Derivd::New(); // ok
+    !GPU var v4: type = /* some value */
+
+    _ = v3.Method(v4); // we don't care about the result (we don't need to declare it as a variable)
+
+    for val in 0:10 // 0 (included) -> 10 (excluded) range loop
+    {
+        // do something
+    }
+
+    for val in 0::10 // 0 (included) -> 10 (included) range loop
+    {
+        // do something
+    }
+}

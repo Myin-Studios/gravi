@@ -1,1 +1,11 @@
-!GPU mut var xac: f32 = 3.5+a;
+!GPU mut var a: f32 = 0::9;
+!GPU mut var b: f32 = 0:10;
+
+!GPU mut var c: f32 = ::9;
+!GPU mut var d: f32 = :10;
+
+!GPU mut var e: f32 = 0:0.1::9;
+!GPU mut var f: f32 = 0:0.1:10;
+
+!GPU mut var g: f32 = :0.1::9;
+!GPU mut var h: f32 = :0.1:10;

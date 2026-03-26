@@ -2,7 +2,7 @@ use std::{fs::File, io::Read};
 
 use colored::Colorize;
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Keyword
 {
     Pub,
@@ -20,7 +20,7 @@ pub enum Keyword
     Fun,
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Numeric
 {
     // Integers
@@ -31,15 +31,16 @@ pub enum Numeric
     F8, F16, F32, F64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Type
 {
     Numeric(Numeric),
     StringLiteral(String),
-    Custom(String)
+    Custom(String),
+    None,
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Punctuation
 {
     Dot,
@@ -51,7 +52,7 @@ pub enum Punctuation
     Assignment,
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Operator
 {
     Add,
@@ -60,17 +61,18 @@ pub enum Operator
     Div
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum TokenKind
 {
     Type(Type),
     Keyword(Keyword),
     Identifier(String),
     Punctuation(Punctuation),
+    Value(String),
     Operator(Operator),
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Token
 {
     kind: TokenKind,
@@ -87,6 +89,11 @@ impl Token {
             line,
             column
         }
+    }
+
+    pub fn kind(&self) -> &TokenKind
+    {
+        &self.kind
     }
 }
 
@@ -135,6 +142,12 @@ impl Lexer {
             self.column += 1;
 
             curr = self.advance();
+
+            if self.current() == ';'
+            {
+                word.push(curr);
+                break;
+            }
 
             if self.current() == ' '
             {
@@ -193,6 +206,14 @@ impl Lexer {
 
         if !word.is_empty() && word != " " && word != "\n"
         {
+            if let Some(c) = word.chars().next()
+            {
+                if c.is_ascii_digit() {
+                    self.tokens.push(Token::new(TokenKind::Value(word.clone()), self.line, self.column - word.len()));
+                    return true;
+                }
+            }
+
             self.tokens.push(
                 match word.as_str() {
                     // Keywords
@@ -262,16 +283,6 @@ impl Lexer {
         self.chars.pop().unwrap_or(' ')
     }
 
-    fn next(&self) -> char
-    {
-        if self.chars.len() < 2
-        {
-            return '\0';
-        }
-
-        self.chars[1]
-    }
-
     fn current(&self) -> char
     {
         if self.chars.len() < 1
@@ -292,9 +303,19 @@ impl Lexer {
             }
         }
 
-        for tok in &self.tokens
+        for tok in self.tokens.iter().clone()
         {
             println!("{:?}", tok);
         }
+    }
+
+    pub fn tokens(&self) -> &Vec<Token>
+    {
+        &self.tokens
+    }
+
+    pub fn tokens_mut(&mut self) -> &mut Vec<Token>
+    {
+        &mut self.tokens
     }
 }

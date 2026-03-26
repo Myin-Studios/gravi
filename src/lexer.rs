@@ -9,6 +9,7 @@ pub enum Keyword
     Var,
     Mut,
     GPU,
+    PAR,
     If,
     For,
     While,
@@ -226,6 +227,7 @@ impl Lexer {
                     "for" => Token::new(TokenKind::Keyword(Keyword::For), self.line, self.column - word.len()),
                     "while" => Token::new(TokenKind::Keyword(Keyword::While), self.line, self.column - word.len()),
                     "!GPU" => Token::new(TokenKind::Keyword(Keyword::GPU), self.line, self.column - word.len()),
+                    "!PAR" => Token::new(TokenKind::Keyword(Keyword::PAR), self.line, self.column - word.len()),
                     "fun" => Token::new(TokenKind::Keyword(Keyword::Fun), self.line, self.column - word.len()),
                     "class" => Token::new(TokenKind::Keyword(Keyword::Class), self.line, self.column - word.len()),
                     "type" => Token::new(TokenKind::Keyword(Keyword::Type), self.line, self.column - word.len()),
@@ -301,11 +303,6 @@ impl Lexer {
             {
                 break;
             }
-        }
-
-        for tok in self.tokens.iter().clone()
-        {
-            println!("{:?}", tok);
         }
     }
 

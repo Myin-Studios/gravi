@@ -12,17 +12,59 @@ pub enum Items
     Var(VarDecl)
 }
 
+#[derive(PartialEq, Clone, Debug)]
+pub enum Parallelism
+{
+    CPU,
+    GPU,
+    None,
+}
+
 #[derive(Debug)]
 pub struct VarDecl
 {
-    gpu: bool,
+    par: Parallelism,
     mutable: bool,
     id: String,
     ty: Type,
     val: Option<Expr>
 }
 
-#[derive(Debug)]
+impl VarDecl {
+    pub fn new() -> Self
+    {
+        Self
+        {
+            par: Parallelism::None,
+            mutable: false,
+            id: "".to_string(),
+            ty: Type::None,
+            val: None
+        }
+    }
+
+    pub fn parallelism(&self) -> &Parallelism
+    {
+        &self.par
+    }
+
+    pub fn identifier(&self) -> &String
+    {
+        &self.id
+    }
+
+    pub fn ty(&self) -> &Type
+    {
+        &self.ty
+    }
+
+    pub fn value(&self) -> &Option<Expr>
+    {
+        &self.val
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Expr
 {
     Literal(String),
@@ -41,13 +83,46 @@ pub enum ExprState
     Nothing,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Range
 {
     start: Box<Expr>,
     step: Option<Box<Expr>>,
     end: Box<Expr>,
     inclusive: bool,
+}
+
+impl Range {
+    pub fn new() -> Self
+    {
+        Self
+        {
+            start: Box::new(Expr::Literal("0".to_string())),
+            step: Some(Box::new(Expr::Literal("1".to_string()))),
+            end: Box::new(Expr::Literal("1".to_string())),
+            inclusive: true,
+        }
+    }
+
+    pub fn start(&self) -> &Box<Expr>
+    {
+        &self.start
+    }
+
+    pub fn step(&self) -> &Option<Box<Expr>>
+    {
+        &self.step
+    }
+
+    pub fn end(&self) -> &Box<Expr>
+    {
+        &self.end
+    }
+
+    pub fn inclusive(&self) -> bool
+    {
+        self.inclusive
+    }
 }
 
 #[derive(PartialEq, Debug)]
@@ -98,8 +173,8 @@ impl Parser {
     {
         tokens.reverse();
 
-        let mut gpu: bool = false;
         let mut mutable: bool = false;
+        let mut par: Parallelism = Parallelism::None;
 
         loop {
             if tokens.is_empty()
@@ -109,30 +184,32 @@ impl Parser {
 
             if let Some(t) = tokens.pop()
             {
-                if t.kind() == &TokenKind::Keyword(Keyword::GPU)
-                {
-                    gpu = true;
-                    continue;
-                }
-                if t.kind() == &TokenKind::Keyword(Keyword::Mut)
-                {
-                    mutable = true;
-                    continue;
-                }
-                if t.kind() == &TokenKind::Keyword(Keyword::Var)
-                {
-                    self.parse_var_decl(gpu, mutable, tokens);
+                match t.kind() {
+                    TokenKind::Keyword(kw) => 
+                    {
+                        match kw {
+                            Keyword::GPU => {
+                                par = Parallelism::GPU;
+                            },
+                            Keyword::PAR => {
+                                par = Parallelism::CPU
+                            },
+                            Keyword::Mut => {
+                                mutable = true;
+                            },
+                            Keyword::Var => {
+                                self.parse_var_decl(par.clone(), mutable, tokens);
+                            },
+                            _ => {}
+                        }
+                    },
+                    _ => {}
                 }
             }
         }
-
-        for item in self.prog.items.iter().clone()
-        {
-            println!("{:?}", item);
-        }
     }
 
-    fn parse_var_decl(&mut self, gpu: bool, mutable: bool, tokens: &mut Vec<Token>)
+    fn parse_var_decl(&mut self, par: Parallelism, mutable: bool, tokens: &mut Vec<Token>)
     {
         let mut id: String = String::new();
         let mut ty: Type = Type::None;
@@ -146,7 +223,7 @@ impl Parser {
                     TokenKind::Type(t) => {
                         ty = t.to_owned();
                     },
-                    TokenKind::Keyword(kw) => {},
+                    TokenKind::Keyword(_) => {},
                     TokenKind::Identifier(idt) => {
                         if self.expects == Expects::Assignment
                         {
@@ -176,8 +253,8 @@ impl Parser {
                             _ => {},
                         }
                     },
-                    TokenKind::Operator(op) => {},
-                    TokenKind::Value(v) => {
+                    TokenKind::Operator(_) => {},
+                    TokenKind::Value(_) => {
                         if self.expects == Expects::Assignment
                         {
                             val = Some(self.parse_expr(t, tokens));
@@ -195,7 +272,7 @@ impl Parser {
         self.prog.add(Items::Var(
             VarDecl
             {
-                gpu,
+                par,
                 mutable,
                 id,
                 ty,
@@ -369,7 +446,7 @@ impl Parser {
                                 _ => {}
                             }
                         },
-                        TokenKind::Operator(op) => {
+                        TokenKind::Operator(_) => {
                             // Code for binary expression
                         },
                         _ => {}
@@ -409,5 +486,10 @@ impl Parser {
                 },
             };
         }
+    }
+    
+    pub fn output(&self) -> &Program
+    {
+        &self.prog
     }
 }

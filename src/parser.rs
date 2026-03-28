@@ -65,11 +65,21 @@ impl VarDecl {
 }
 
 #[derive(Debug, Clone)]
+pub struct Binary
+{
+    left: Box<Expr>,
+    op: Operator,
+    right: Box<Expr>,
+    priority: bool,
+}
+
+#[derive(Debug, Clone)]
 pub enum Expr
 {
     Literal(String),
     Identifier(String),
     Range(Range),
+    Binary(Binary)
 }
 
 #[derive(Debug)]
@@ -199,6 +209,9 @@ impl Parser {
                             },
                             Keyword::Var => {
                                 self.parse_var_decl(par.clone(), mutable, tokens);
+
+                                par = Parallelism::None;
+                                mutable = false;
                             },
                             _ => {}
                         }
@@ -227,7 +240,8 @@ impl Parser {
                     TokenKind::Identifier(idt) => {
                         if self.expects == Expects::Assignment
                         {
-                            val = Some(self.parse_expr(t, tokens));
+                            tokens.push(t);
+                            val = Some(self.parse_expr(tokens));
 
                             self.expects = Expects::Nothing;
                         }
@@ -244,7 +258,8 @@ impl Parser {
                             Punctuation::Colon | Punctuation::RangeInclusive => {
                                 if self.expects == Expects::Assignment
                                 {
-                                    val = Some(self.parse_expr(t, tokens));
+                                    tokens.push(t);
+                                    val = Some(self.parse_expr(tokens));
 
                                     self.expects = Expects::Nothing;
                                 }
@@ -257,7 +272,8 @@ impl Parser {
                     TokenKind::Value(_) => {
                         if self.expects == Expects::Assignment
                         {
-                            val = Some(self.parse_expr(t, tokens));
+                            tokens.push(t);
+                            val = Some(self.parse_expr(tokens));
 
                             self.expects = Expects::Nothing;
                         }
@@ -279,212 +295,237 @@ impl Parser {
                 val
             }
         ));
+
+        println!("{:#?}", self.prog.items().last())
     }
 
-    fn parse_expr(&mut self, current: Token, tokens: &mut Vec<Token>) -> Expr
+    fn parse_expr(&mut self, tokens: &mut Vec<Token>) -> Expr
     {
-        let mut v1: Option<Expr> = None;
-        let mut v2: Option<Expr> = None;
-        let mut v3: Option<Expr> = None;
-        let mut inclusive: bool = false;
-        let mut state: ExprState = ExprState::Nothing;
+        let mut l = self.parse_term(tokens);
 
-        match current.kind() {
-            TokenKind::Identifier(id) => {
-                v1 = Some(Expr::Identifier(id.to_string()));
-                state = ExprState::Single;
-            },
-            TokenKind::Value(val) => {
-                v1 = Some(Expr::Literal(val.to_string()));
-                state = ExprState::Single;
-            },
-            TokenKind::Punctuation(p) => {
-                match p {
-                    Punctuation::Colon => {
-                        v1 = Some(Expr::Literal("0".to_string()));
-                        state = ExprState::RangeNoStep;
+        loop {
+            if let Some(t) = tokens.last().cloned()
+            {
+                match t.kind() {
+                    TokenKind::Operator(o) => {
+                        match o {
+                            Operator::Add | Operator::Sub => {
 
-                        if let Some(t) = tokens.pop()
-                        {
-                            match t.kind() {
-                                TokenKind::Identifier(id) => {
-                                    v2 = Some(Expr::Identifier(id.to_string()));
-                                },
-                                TokenKind::Value(val) => {
-                                    v2 = Some(Expr::Literal(val.to_string()));
-                                },
-                                _ => {}
+                                let _ = tokens.pop();
+                                let r = self.parse_term(tokens);
+
+                                l = Expr::Binary(
+                                    Binary
+                                    {
+                                        left: Box::new(l),
+                                        op: o.to_owned(),
+                                        right: Box::new(r),
+                                        priority: false
+                                    }
+                                )
                             }
+                            _ => return l
                         }
                     },
-                    Punctuation::RangeInclusive => {
-                        v1 = Some(Expr::Literal("0".to_string()));
-                        state = ExprState::RangeNoStep;
-                        inclusive = true;
+                    TokenKind::Punctuation(p) => {
+                        match p {
+                            Punctuation::Colon => {
 
-                        if let Some(t) = tokens.pop()
-                        {
-                            match t.kind() {
-                                TokenKind::Identifier(id) => {
-                                    v2 = Some(Expr::Identifier(id.to_string()));
-                                },
-                                TokenKind::Value(val) => {
-                                    v2 = Some(Expr::Literal(val.to_string()));
-                                },
-                                _ => {}
+                                let _ = tokens.pop();
+                                
+                                let sec = self.parse_term(tokens);
+
+                                if let Some(tk) = tokens.last()
+                                {
+                                    match tk.kind() {
+                                        TokenKind::Punctuation(p) => {
+                                            match p {
+                                                Punctuation::Colon => {
+
+                                                    let _ = tokens.pop();
+
+                                                    let thi = self.parse_term(tokens);
+
+                                                    l = Expr::Range(
+                                                        Range
+                                                        {
+                                                            start: Box::new(l),
+                                                            step: Some(Box::new(sec)),
+                                                            end: Box::new(thi),
+                                                            inclusive: false
+                                                        }
+                                                    )
+                                                },
+                                                Punctuation::RangeInclusive => {
+                                                    
+                                                    let _ = tokens.pop();
+
+                                                    let thi = self.parse_term(tokens);
+
+                                                    l = Expr::Range(
+                                                        Range
+                                                        {
+                                                            start: Box::new(l),
+                                                            step: Some(Box::new(sec)),
+                                                            end: Box::new(thi),
+                                                            inclusive: true
+                                                        }
+                                                    )
+                                                },
+                                                _ => {
+                                                    l = Expr::Range(
+                                                        Range
+                                                        {
+                                                            start: Box::new(l),
+                                                            step: None,
+                                                            end: Box::new(sec),
+                                                            inclusive: true
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        _ => {
+                                            l = Expr::Range(
+                                                Range
+                                                {
+                                                    start: Box::new(l),
+                                                    step: None,
+                                                    end: Box::new(sec),
+                                                    inclusive: false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            Punctuation::RangeInclusive => {
+                                
+                                let _ = tokens.pop();
+                                
+                                let sec = self.parse_term(tokens);
+
+                                if let Some(tk) = tokens.last()
+                                {
+                                    match tk.kind() {
+                                        TokenKind::Punctuation(p) => {
+                                            match p {
+                                                Punctuation::Colon => {
+
+                                                    let _ = tokens.pop();
+                                                    
+                                                    let thi = self.parse_term(tokens);
+
+                                                    l = Expr::Range(
+                                                        Range
+                                                        {
+                                                            start: Box::new(l),
+                                                            step: Some(Box::new(sec)),
+                                                            end: Box::new(thi),
+                                                            inclusive: false
+                                                        }
+                                                    )
+                                                },
+                                                Punctuation::RangeInclusive => {
+
+                                                    let _ = tokens.pop();
+                                                    
+                                                    let thi = self.parse_term(tokens);
+
+                                                    l = Expr::Range(
+                                                        Range
+                                                        {
+                                                            start: Box::new(l),
+                                                            step: Some(Box::new(sec)),
+                                                            end: Box::new(thi),
+                                                            inclusive: true
+                                                        }
+                                                    )
+                                                },
+                                                _ => {
+                                                    l = Expr::Range(
+                                                        Range
+                                                        {
+                                                            start: Box::new(l),
+                                                            step: None,
+                                                            end: Box::new(sec),
+                                                            inclusive: true
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        _ => {
+                                            l = Expr::Range(
+                                                Range
+                                                {
+                                                    start: Box::new(l),
+                                                    step: None,
+                                                    end: Box::new(sec),
+                                                    inclusive: true
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            _ => {
+                                return l
                             }
                         }
-                    },
-                    _ => {}
+                    }
+                    _ => return l
                 }
             }
-            _ => {}
-        };
-        
-        loop {
-            match tokens.pop() {
-                Some(t) => {
-                    match t.kind() {
-                        TokenKind::Punctuation(p) => {
-                            match p {
-                                Punctuation::Colon => {
-                                    // Code for non-inclusive range
-                                    if let Some(t) = tokens.pop()
-                                    {
-                                        match t.kind() {
-                                            TokenKind::Identifier(id) => {
-                                                if v2.is_none()
-                                                {
-                                                    v2 = Some(Expr::Identifier(id.to_string()));
-                                                    state = ExprState::RangeNoStep;
-                                                }
-                                                else {
-                                                    v3 = Some(Expr::Identifier(id.to_string()));
-                                                    state = ExprState::RangeStep;
-                                                }
-                                            },
-                                            TokenKind::Value(val) => {
-                                                if v2.is_none()
-                                                {
-                                                    v2 = Some(Expr::Literal(val.to_string()));
-                                                    state = ExprState::RangeNoStep;
-                                                }
-                                                else {
-                                                    v3 = Some(Expr::Literal(val.to_string()));
-                                                    state = ExprState::RangeStep;
-                                                }
-                                            },
-                                            _ => {}
-                                        }
-                                    }
-                                },
-                                Punctuation::RangeInclusive => {
-                                    // Code for inclusive range
-                                    inclusive = true;
+        }
+    }
 
-                                    if let Some(t) = tokens.pop()
+    fn parse_term(&mut self, tokens: &mut Vec<Token>) -> Expr
+    {
+        let mut l = self.parse_factor(tokens);
+
+        loop {
+            if let Some(t) = tokens.last().cloned()
+            {
+                match t.kind() {
+                    TokenKind::Operator(o) => {
+                        match o {
+                            Operator::Mul | Operator::Div => {
+
+                                let _ = tokens.pop();
+                                let r = self.parse_factor(tokens);
+
+                                l = Expr::Binary(
+                                    Binary
                                     {
-                                        match t.kind() {
-                                            TokenKind::Identifier(id) => {
-                                                if v2.is_none()
-                                                {
-                                                    v2 = Some(Expr::Identifier(id.to_string()));
-                                                    state = ExprState::RangeNoStep;
-                                                }
-                                                else {
-                                                    v3 = Some(Expr::Identifier(id.to_string()));
-                                                    state = ExprState::RangeStep;
-                                                }
-                                            },
-                                            TokenKind::Value(val) => {
-                                                if v2.is_none()
-                                                {
-                                                    v2 = Some(Expr::Literal(val.to_string()));
-                                                    state = ExprState::RangeNoStep;
-                                                }
-                                                else {
-                                                    v3 = Some(Expr::Literal(val.to_string()));
-                                                    state = ExprState::RangeStep;
-                                                }
-                                            },
-                                            _ => {}
-                                        }
+                                        left: Box::new(l),
+                                        op: o.to_owned(),
+                                        right: Box::new(r),
+                                        priority: false
                                     }
-                                },
-                                Punctuation::SemiColon => {
-                                    match state {
-                                        ExprState::Single => {
-                                            return v1.unwrap_or(Expr::Identifier("null".to_string()))
-                                        },
-                                        ExprState::RangeNoStep => {
-                                            return Expr::Range(
-                                                Range
-                                                {
-                                                    start: Box::new(v1.unwrap_or(Expr::Identifier("null".to_string()))),
-                                                    step: Some(Box::new(Expr::Literal("1".to_string()))),
-                                                    end: Box::new(v2.unwrap_or(Expr::Identifier("null".to_string()))),
-                                                    inclusive
-                                                }
-                                            );
-                                        },
-                                        ExprState::RangeStep => {
-                                            return Expr::Range(
-                                                Range
-                                                {
-                                                    start: Box::new(v1.unwrap_or(Expr::Identifier("null".to_string()))),
-                                                    step: Some(Box::new(v2.unwrap_or(Expr::Identifier("null".to_string())))),
-                                                    end: Box::new(v3.unwrap_or(Expr::Identifier("null".to_string()))),
-                                                    inclusive
-                                                }
-                                            );
-                                        },
-                                        ExprState::Binary => {},
-                                        ExprState::Unary => {},
-                                        ExprState::Nothing => {},
-                                    }
-                                },
-                                _ => {}
+                                )
                             }
-                        },
-                        TokenKind::Operator(_) => {
-                            // Code for binary expression
-                        },
-                        _ => {}
+                            _ => return l
+                        }
                     }
-                },
-                None => {
-                    match state {
-                        ExprState::Single => {
-                            return v1.unwrap_or(Expr::Identifier("null".to_string()))
-                        },
-                        ExprState::RangeNoStep => {
-                            return Expr::Range(
-                                Range
-                                {
-                                    start: Box::new(v1.unwrap_or(Expr::Identifier("null".to_string()))),
-                                    step: Some(Box::new(Expr::Literal("1".to_string()))),
-                                    end: Box::new(v2.unwrap_or(Expr::Identifier("null".to_string()))),
-                                    inclusive
-                                }
-                            );
-                        },
-                        ExprState::RangeStep => {
-                            return Expr::Range(
-                                Range
-                                {
-                                    start: Box::new(v1.unwrap_or(Expr::Identifier("null".to_string()))),
-                                    step: Some(Box::new(v2.unwrap_or(Expr::Identifier("null".to_string())))),
-                                    end: Box::new(v3.unwrap_or(Expr::Identifier("null".to_string()))),
-                                    inclusive
-                                }
-                            );
-                        },
-                        ExprState::Binary => {},
-                        ExprState::Unary => {},
-                        ExprState::Nothing => {},
-                    }
-                },
-            };
+                    _ => return l
+                }
+            }
+        }
+    }
+
+    fn parse_factor(&mut self, tokens: &mut Vec<Token>) -> Expr
+    {
+        if let Some(t) = tokens.pop()
+        {
+            match t.kind() {
+                TokenKind::Identifier(id) => Expr::Identifier(id.to_string()),
+                TokenKind::Value(val) => Expr::Literal(val.to_string()),
+                _ => Expr::Identifier("null".to_string())
+            }
+        }
+        else {
+            Expr::Identifier("null".to_string())
         }
     }
     

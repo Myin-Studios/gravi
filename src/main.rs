@@ -81,13 +81,13 @@ fn main()
             }
         }
         else {
-            let _ = std::process::Command::new("gcc").arg("out/out.c").arg("-o").arg("-fopenmp").arg(format!("out/{}.exe", filename)).output();
+            let _ = std::process::Command::new("gcc").arg("out/out.c").arg("-o").arg(format!("out/{}.exe", filename)).arg("-fopenmp").output();
         }
 
         if args.contains(&"-r".to_string())
         {
             println!("\n{} and {} '{}'", "Building".green().bold(), "running".green().bold(), filename.white().bold());
-            let _ = std::process::Command::new("out/test.exe");
+            let _ = std::process::Command::new(format!("out/{}.exe", filename).as_str()).status();
         }
     }
 }

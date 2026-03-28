@@ -1,2 +1,1 @@
-!PAR mut var h: f64 = 0::1000000000;
-var a: i32 =  2 + 3 * 5;
+!PAR mut var h: f32 = 10:10:10;

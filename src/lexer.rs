@@ -29,7 +29,7 @@ pub enum Numeric
     I8, I16, I32, I64,
     
     // Floating point
-    F8, F16, F32, F64,
+    F16, F32, F64,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -242,7 +242,6 @@ impl Lexer {
                     "i16" => Token::new(TokenKind::Type(Type::Numeric(Numeric::I16)), self.line, self.column - word.len()),
                     "i32" => Token::new(TokenKind::Type(Type::Numeric(Numeric::I32)), self.line, self.column - word.len()),
                     "i64" => Token::new(TokenKind::Type(Type::Numeric(Numeric::I64)), self.line, self.column - word.len()),
-                    "f8"  => Token::new(TokenKind::Type(Type::Numeric(Numeric::F8)), self.line, self.column - word.len()),
                     "f16" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F16)), self.line, self.column - word.len()),
                     "f32" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F32)), self.line, self.column - word.len()),
                     "f64" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F64)), self.line, self.column - word.len()),

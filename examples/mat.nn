@@ -1,0 +1,29 @@
+// var id: numeric_type = [n, m](val) -> n x m matrix of val
+// var id: numeric_type = [n](val) -> array of n vals
+
+// Examples
+var a: i32 = [2, 3](5);
+/*
+    ---------
+    | 5 5 5 |
+    | 5 5 5 |
+    ---------
+*/
+
+var b: i32 = [5](3); // [3, 3, 3, 3, 3]
+
+/* In a future:
+    I have to chose between the next two implementations:
+    var sa: i32 = [n, m].fill(range, Fill::Row);
+    var sa: i32 = [n, m].fill(range, Fill::Col);
+    var sa: i32 = [n, m].fill(range, Fill::Fit);
+    var sa: i32 = [n, m].fill(range, Fill::Match);
+    
+    or
+    
+    var sa: SpecialArray<numeric_type> = SpecialArray::with_size(n, m).fill(range).type(Fill::Row);
+    var sa: SpecialArray<numeric_type> = SpecialArray::with_size(n, m).fill(range).type(Fill::Col);
+    var sa: SpecialArray<numeric_type> = SpecialArray::with_size(n, m).fill(range).type(Fill::Fit);
+    var sa: SpecialArray<numeric_type> = SpecialArray::with_size(n, m).fill(range).type(Fill::Match);
+*/
+

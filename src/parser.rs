@@ -48,6 +48,11 @@ impl VarDecl {
         &self.par
     }
 
+    pub fn mutable(&self) -> &bool
+    {
+        &self.mutable
+    }
+
     pub fn identifier(&self) -> &String
     {
         &self.id
@@ -295,8 +300,6 @@ impl Parser {
                 val
             }
         ));
-
-        println!("{:#?}", self.prog.items().last())
     }
 
     fn parse_expr(&mut self, tokens: &mut Vec<Token>) -> Expr
@@ -531,6 +534,7 @@ impl Parser {
     
     pub fn output(&self) -> &Program
     {
+        println!("{:#?}", self.prog);
         &self.prog
     }
 }

@@ -75,7 +75,33 @@ pub struct Binary
     left: Box<Expr>,
     op: Operator,
     right: Box<Expr>,
-    priority: bool,
+}
+
+impl Binary {
+    pub fn new() -> Self
+    {
+        Self
+        {
+            left: Box::new(Expr::Null),
+            op: Operator::None,
+            right: Box::new(Expr::Null),
+        }
+    }
+    
+    pub fn left(&self) -> &Expr
+    {
+        &self.left
+    }
+
+    pub fn op(&self) -> &Operator
+    {
+        &self.op
+    }
+
+    pub fn right(&self) -> &Expr
+    {
+        &self.right
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -84,7 +110,9 @@ pub enum Expr
     Literal(String),
     Identifier(String),
     Range(Range),
-    Binary(Binary)
+    Binary(Binary),
+    Grouped(Box<Expr>),
+    Null
 }
 
 #[derive(Debug)]
@@ -268,7 +296,14 @@ impl Parser {
 
                                     self.expects = Expects::Nothing;
                                 }
-                            }
+                            },
+                            Punctuation::LParen => {
+                                if self.expects == Expects::Assignment {
+                                    tokens.push(t);
+                                    val = Some(self.parse_expr(tokens));
+                                    self.expects = Expects::Nothing;
+                                }
+                            },
                             Punctuation::SemiColon => break,
                             _ => {},
                         }
@@ -323,7 +358,6 @@ impl Parser {
                                         left: Box::new(l),
                                         op: o.to_owned(),
                                         right: Box::new(r),
-                                        priority: false
                                     }
                                 )
                             }
@@ -472,6 +506,7 @@ impl Parser {
                                     }
                                 }
                             },
+                            Punctuation::RParen => return l,
                             _ => {
                                 return l
                             }
@@ -504,7 +539,6 @@ impl Parser {
                                         left: Box::new(l),
                                         op: o.to_owned(),
                                         right: Box::new(r),
-                                        priority: false
                                     }
                                 )
                             }
@@ -524,6 +558,11 @@ impl Parser {
             match t.kind() {
                 TokenKind::Identifier(id) => Expr::Identifier(id.to_string()),
                 TokenKind::Value(val) => Expr::Literal(val.to_string()),
+                TokenKind::Punctuation(Punctuation::LParen) => {
+                    let inner = self.parse_expr(tokens);
+                    let _ = tokens.pop();
+                    Expr::Grouped(Box::new(inner))
+                }
                 _ => Expr::Identifier("null".to_string())
             }
         }

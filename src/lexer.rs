@@ -64,7 +64,8 @@ pub enum Operator
     Add,
     Sub,
     Mul,
-    Div
+    Div,
+    None
 }
 
 #[derive(PartialEq, Debug, Clone)]

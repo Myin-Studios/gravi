@@ -1,4 +1,4 @@
-use crate::parser::{Expr, Parallelism, Program, VarDecl};
+use crate::{lexer::Operator, parser::{Expr, Parallelism, Program, VarDecl}};
 
 pub struct Generator
 {
@@ -60,17 +60,6 @@ impl Generator {
         };
         
         match var.value().clone().unwrap_or(crate::parser::Expr::Identifier("null".to_string())) {
-            crate::parser::Expr::Literal(val) => {
-                let mutable = if *var.mutable()
-                {
-                    ""
-                }
-                else {
-                    "const "
-                };
-                
-                self.out.push_str(format!("\t{}{} {} = {};\n\n", mutable, ty, var.identifier(), val).as_str());
-            },
             crate::parser::Expr::Range(range) => {
                 let start = match range.start().as_ref() {
                     crate::parser::Expr::Literal(val) => val.to_string(),
@@ -124,8 +113,49 @@ impl Generator {
                 }
                 
             },
-            _ => {},
+            _ => {
+                let mutable = if *var.mutable()
+                {
+                    ""
+                }
+                else {
+                    "const "
+                };
+                
+                self.out.push_str(format!("\t{}{} {} = {};\n\n", mutable, ty, var.identifier(), self.gen_expr(var.value().as_ref().unwrap_or(&Expr::Null))).as_str());
+            },
         }
+    }
+
+    fn gen_expr(&self, expr: &Expr) -> String
+    {
+        let mut res: String = String::new();
+        
+        match expr {
+            Expr::Identifier(id) => res = id.to_string(),
+            Expr::Literal(val) => res = val.to_string(),
+            Expr::Binary(binary) => {
+                let op = match binary.op()
+                {
+                    Operator::Add => "+",
+                    Operator::Sub => "-",
+                    Operator::Mul => "*",
+                    Operator::Div => "/",
+                    _ => "" // unsupported operator
+                };
+                
+                let l = self.gen_expr(binary.left());
+                let r = self.gen_expr(binary.right());
+
+                res = format!("{} {} {}", l, op, r);
+            },
+            Expr::Grouped(e) => {
+                res = format!("({})", self.gen_expr(e));
+            }
+            _ => {}
+        };
+
+        res
     }
 
     pub fn output(&self) -> &String

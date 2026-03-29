@@ -14,7 +14,6 @@ pub enum Keyword
     For,
     While,
     Else,
-    ElseIf,
     Type,
     Class,
     Ext,
@@ -51,6 +50,12 @@ pub enum Punctuation
     SemiColon,
     RangeInclusive,
     Assignment,
+    LParen,
+    RParen,
+    LBracket,
+    RBracket,
+    LBrace,
+    RBrace
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -128,154 +133,232 @@ impl Lexer {
         }
     }
 
+    fn is_special(&mut self)
+    {
+        if self.current() == ' '
+        {
+            let _ = self.advance();
+            self.column += 1;
+        }
+        else if self.current() == '\n' {
+            let _ = self.advance();
+            self.column = 1;
+            self.line += 1;
+        }
+        else if self.current() == '\t' {
+            let _ = self.advance();
+            self.column += 4;
+        }
+    }
+
+    fn is_comment(&mut self)
+    {
+        if self.current() == '/'
+        {
+            let mut c = self.advance();
+
+            if self.current() == '/'
+            {
+                loop {
+                    c = self.advance();
+
+                    self.column += 1;
+
+                    if c == '\n'
+                    {
+                        self.line += 1;
+                        break;
+                    }
+                }
+            }
+            else if self.current() == '*' {
+                loop {
+                    self.is_special(); // multiline comments
+
+                    c = self.advance();
+
+                    self.column += 1;
+
+                    if c == '*'
+                    {
+                        if self.current() == '/'
+                        {
+                            let _ = self.advance();
+                            
+                            self.column += 1;
+                            
+                            break;
+                        }
+                    }
+                }
+            }
+            else {
+                self.chars.push(c);
+            }
+        }
+    }
+    
+    fn is_punctuation(&self, ignore: Option<char>) -> bool {
+        let c = self.current();
+        if Some(c) == ignore { return false; }
+        matches!(c, '.' | ',' | ':' | ';' | '=' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']' | '{' | '}')
+    }
+    
+    fn read_word(&mut self) -> String
+    {
+        let mut word: String = String::new();
+        
+        if self.current().is_alphabetic() || self.current() == '!'
+        {
+            word.push(self.advance());
+            
+            self.column += 1;
+
+            loop {
+                if !self.is_punctuation(None) && !self.current().is_whitespace() && self.current() != '\0'
+                {
+                    word.push(self.advance());
+
+                    self.column += 1;
+                }
+                else {
+                    break;
+                }
+            }
+        }
+        else if self.current().is_ascii_digit()
+        {
+            word.push(self.advance());
+            
+            self.column += 1;
+
+            loop {
+                if self.current() != '\n' && !self.is_punctuation(Some('.')) && !self.current().is_whitespace() && self.current() != '\0'
+                {
+                    word.push(self.advance());
+
+                    self.column += 1;
+                }
+                else {
+                    break;
+                }
+            }
+        }
+
+        word
+    }
+
+    fn what(&self, word: &str) -> Token
+    {
+        match word {
+            "pub" => Token::new(TokenKind::Keyword(Keyword::Pub), self.line, self.column - word.len()),
+            "var" => Token::new(TokenKind::Keyword(Keyword::Var), self.line, self.column - word.len()),
+            "mut" => Token::new(TokenKind::Keyword(Keyword::Mut), self.line, self.column - word.len()),
+            "if" => Token::new(TokenKind::Keyword(Keyword::If), self.line, self.column - word.len()),
+            "else" => Token::new(TokenKind::Keyword(Keyword::Else), self.line, self.column - word.len()),
+            "for" => Token::new(TokenKind::Keyword(Keyword::For), self.line, self.column - word.len()),
+            "while" => Token::new(TokenKind::Keyword(Keyword::While), self.line, self.column - word.len()),
+            "!GPU" => Token::new(TokenKind::Keyword(Keyword::GPU), self.line, self.column - word.len()),
+            "!PAR" => Token::new(TokenKind::Keyword(Keyword::PAR), self.line, self.column - word.len()),
+            "fun" => Token::new(TokenKind::Keyword(Keyword::Fun), self.line, self.column - word.len()),
+            "class" => Token::new(TokenKind::Keyword(Keyword::Class), self.line, self.column - word.len()),
+            "type" => Token::new(TokenKind::Keyword(Keyword::Type), self.line, self.column - word.len()),
+            "ext" => Token::new(TokenKind::Keyword(Keyword::Ext), self.line, self.column - word.len()),
+
+            // Types
+            "u8"  => Token::new(TokenKind::Type(Type::Numeric(Numeric::U8)), self.line, self.column - word.len()),
+            "u16" => Token::new(TokenKind::Type(Type::Numeric(Numeric::U16)), self.line, self.column - word.len()),
+            "u32" => Token::new(TokenKind::Type(Type::Numeric(Numeric::U32)), self.line, self.column - word.len()),
+            "u64" => Token::new(TokenKind::Type(Type::Numeric(Numeric::U64)), self.line, self.column - word.len()),
+            "i8"  => Token::new(TokenKind::Type(Type::Numeric(Numeric::I8)), self.line, self.column - word.len()),
+            "i16" => Token::new(TokenKind::Type(Type::Numeric(Numeric::I16)), self.line, self.column - word.len()),
+            "i32" => Token::new(TokenKind::Type(Type::Numeric(Numeric::I32)), self.line, self.column - word.len()),
+            "i64" => Token::new(TokenKind::Type(Type::Numeric(Numeric::I64)), self.line, self.column - word.len()),
+            "f16" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F16)), self.line, self.column - word.len()),
+            "f32" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F32)), self.line, self.column - word.len()),
+            "f64" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F64)), self.line, self.column - word.len()),
+
+            // Punctuation
+            "." => Token::new(TokenKind::Punctuation(Punctuation::Dot), self.line, self.column - word.len()),
+            ".." => Token::new(TokenKind::Punctuation(Punctuation::Spread), self.line, self.column - word.len()),
+            ":" => Token::new(TokenKind::Punctuation(Punctuation::Colon), self.line, self.column - word.len()),
+            "::" => Token::new(TokenKind::Punctuation(Punctuation::RangeInclusive), self.line, self.column - word.len()),
+            "," => Token::new(TokenKind::Punctuation(Punctuation::Comma), self.line, self.column - word.len()),
+            ";" => Token::new(TokenKind::Punctuation(Punctuation::SemiColon), self.line, self.column - word.len()),
+            "=" => Token::new(TokenKind::Punctuation(Punctuation::Assignment), self.line, self.column - word.len()),
+            "(" => Token::new(TokenKind::Punctuation(Punctuation::LParen), self.line, self.column - word.len()),
+            ")" => Token::new(TokenKind::Punctuation(Punctuation::RParen), self.line, self.column - word.len()),
+            "[" => Token::new(TokenKind::Punctuation(Punctuation::LBracket), self.line, self.column - word.len()),
+            "]" => Token::new(TokenKind::Punctuation(Punctuation::RBracket), self.line, self.column - word.len()),
+            "{" => Token::new(TokenKind::Punctuation(Punctuation::LBrace), self.line, self.column - word.len()),
+            "}" => Token::new(TokenKind::Punctuation(Punctuation::RBrace), self.line, self.column - word.len()),
+
+            // Operator
+            "+" => Token::new(TokenKind::Operator(Operator::Add), self.line, self.column - word.len()),
+            "-" => Token::new(TokenKind::Operator(Operator::Sub), self.line, self.column - word.len()),
+            "*" => Token::new(TokenKind::Operator(Operator::Mul), self.line, self.column - word.len()),
+            "/" => Token::new(TokenKind::Operator(Operator::Div), self.line, self.column - word.len()),
+
+            _ => Token::new(TokenKind::Identifier(word.to_string()), self.line, self.column - word.len())
+        }
+    }
+
     fn has(&mut self) -> bool
     {
         if self.chars.is_empty()
         {
-            return false;
+            return false
         }
 
-        let mut word = String::new();
-        let mut curr;
-        let mut special = ' ';
+        let mut word: String = String::new();
+        
+        self.is_special();
+        self.is_comment();
 
-        loop {
-            self.column += 1;
+        match self.current() {
+            ':' => {
+                let c = self.advance();
 
-            curr = self.advance();
-
-            if self.current() == ';'
-            {
-                word.push(curr);
-                break;
-            }
-
-            if self.current() == ' '
-            {
-                word.push(curr);
-                break;
-            }
-            if curr == ' '
-            {
-                break;
-            }
-            else if self.current() == ':'
-            {
-                if curr == ':'
+                if self.current() == ':'
                 {
-                    word.push(curr);
-                    continue;
+                    word.push_str(format!("{}{}", c, self.advance()).as_str());
                 }
+                else {
+                    word.push(c);
+                }
+            },
+            '.' => {
+                let c = self.advance();
 
-                word.push(curr);
-                break;
-            }
-            else if curr == ':' {
-                if self.current().is_alphanumeric()
+                if self.current() == '.'
                 {
-                    word.push(curr);
-                    break;
+                    word.push_str(format!("{}{}", c, self.advance()).as_str());
                 }
-            }
-            else if self.current() == '\n' || self.current() == '\0' || self.current() == ';'
-            || self.current() == '+' || self.current() == '-' || self.current() == '*' || self.current() == '/' {
-                word.push(curr);
-                break;
-            }
-            else if curr == '+' || curr == '-' || curr == '*' || curr == '/' {
-                if self.current().is_ascii_digit()
-                {
-                    word.push(curr);
-                    break;
+                else {
+                    word.push(c);
                 }
-                else
-                {
-                    let lines: Vec<&str> = self.content.lines().collect();
-                    let error_base = vec![' ' as u8; lines[self.line - 1].len() - 1];
-                    let mut error = String::from_utf8(error_base).unwrap();
-                    error.replace_range(self.column - 1..self.column, "^");
-                    println!("{}", format!("{}\n|\t{}\n\t{}", "[ERROR]".red(), lines[self.line - 1], error.red()))
-                }
+            },
+            '=' | '+' | '-' | '*' | '/' | ';' | ',' | '(' | ')' | '[' | ']' | '{' | '}' => {
+                word.push(self.advance());
+            },
+            _ => {
+                word = self.read_word();
             }
-            else if curr == '\n' {
-                special = '\n';
-                break;
-            }
-
-            word.push(curr);
         }
 
-        if !word.is_empty() && word != " " && word != "\n"
+        if let Some(c) = word.chars().next()
         {
-            if let Some(c) = word.chars().next()
-            {
-                if c.is_ascii_digit() {
-                    self.tokens.push(Token::new(TokenKind::Value(word.clone()), self.line, self.column - word.len()));
-                    return true;
-                }
+            if c.is_ascii_digit() {
+                self.tokens.push(Token::new(TokenKind::Value(word.clone()), self.line, self.column - word.len()));
+                return true
             }
-
-            self.tokens.push(
-                match word.as_str() {
-                    // Keywords
-                    "pub" => Token::new(TokenKind::Keyword(Keyword::Pub), self.line, self.column - word.len()),
-                    "var" => Token::new(TokenKind::Keyword(Keyword::Var), self.line, self.column - word.len()),
-                    "mut" => Token::new(TokenKind::Keyword(Keyword::Mut), self.line, self.column - word.len()),
-                    "if" => Token::new(TokenKind::Keyword(Keyword::If), self.line, self.column - word.len()),
-                    "else" => Token::new(TokenKind::Keyword(Keyword::Else), self.line, self.column - word.len()),
-                    "else if" => Token::new(TokenKind::Keyword(Keyword::ElseIf), self.line, self.column - word.len()),
-                    "for" => Token::new(TokenKind::Keyword(Keyword::For), self.line, self.column - word.len()),
-                    "while" => Token::new(TokenKind::Keyword(Keyword::While), self.line, self.column - word.len()),
-                    "!GPU" => Token::new(TokenKind::Keyword(Keyword::GPU), self.line, self.column - word.len()),
-                    "!PAR" => Token::new(TokenKind::Keyword(Keyword::PAR), self.line, self.column - word.len()),
-                    "fun" => Token::new(TokenKind::Keyword(Keyword::Fun), self.line, self.column - word.len()),
-                    "class" => Token::new(TokenKind::Keyword(Keyword::Class), self.line, self.column - word.len()),
-                    "type" => Token::new(TokenKind::Keyword(Keyword::Type), self.line, self.column - word.len()),
-                    "ext" => Token::new(TokenKind::Keyword(Keyword::Ext), self.line, self.column - word.len()),
-
-                    // Types
-                    "u8"  => Token::new(TokenKind::Type(Type::Numeric(Numeric::U8)), self.line, self.column - word.len()),
-                    "u16" => Token::new(TokenKind::Type(Type::Numeric(Numeric::U16)), self.line, self.column - word.len()),
-                    "u32" => Token::new(TokenKind::Type(Type::Numeric(Numeric::U32)), self.line, self.column - word.len()),
-                    "u64" => Token::new(TokenKind::Type(Type::Numeric(Numeric::U64)), self.line, self.column - word.len()),
-                    "i8"  => Token::new(TokenKind::Type(Type::Numeric(Numeric::I8)), self.line, self.column - word.len()),
-                    "i16" => Token::new(TokenKind::Type(Type::Numeric(Numeric::I16)), self.line, self.column - word.len()),
-                    "i32" => Token::new(TokenKind::Type(Type::Numeric(Numeric::I32)), self.line, self.column - word.len()),
-                    "i64" => Token::new(TokenKind::Type(Type::Numeric(Numeric::I64)), self.line, self.column - word.len()),
-                    "f16" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F16)), self.line, self.column - word.len()),
-                    "f32" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F32)), self.line, self.column - word.len()),
-                    "f64" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F64)), self.line, self.column - word.len()),
-
-                    // Punctuation
-                    // "." => Token::new(TokenKind::Punctuation(Punctuation::Dot), line, col),
-                    ".." => Token::new(TokenKind::Punctuation(Punctuation::Spread), self.line, self.column - word.len()),
-                    ":" => Token::new(TokenKind::Punctuation(Punctuation::Colon), self.line, self.column - word.len()),
-                    "::" => Token::new(TokenKind::Punctuation(Punctuation::RangeInclusive), self.line, self.column - word.len()),
-                    "," => Token::new(TokenKind::Punctuation(Punctuation::Comma), self.line, self.column - word.len()),
-                    ";" => Token::new(TokenKind::Punctuation(Punctuation::SemiColon), self.line, self.column - word.len()),
-                    "=" => Token::new(TokenKind::Punctuation(Punctuation::Assignment), self.line, self.column - word.len()),
-
-                    // Operator
-                    "+" => Token::new(TokenKind::Operator(Operator::Add), self.line, self.column - word.len()),
-                    "-" => Token::new(TokenKind::Operator(Operator::Sub), self.line, self.column - word.len()),
-                    "*" => Token::new(TokenKind::Operator(Operator::Mul), self.line, self.column - word.len()),
-                    "/" => Token::new(TokenKind::Operator(Operator::Div), self.line, self.column - word.len()),
-
-                    _ => Token::new(TokenKind::Identifier(word.to_string()), self.line, self.column - word.len())
-                }
-            );
         }
-        else if word == "\n" {
-            self.column = 1;
-            self.line += 1;
+
+        if !word.is_empty()
+        {
+            self.tokens.push(self.what(word.as_str()));
         }
         
-        if special == '\n'
-        {
-            self.column = 1;
-            self.line += 1;
-        }
-
         true
     }
 

@@ -1,1 +1,8 @@
-!PAR mut var h: f32 = 10:10:10;
+// this is a line comment!
+mut var a: i32 = 5;
+
+!PAR mut var h: f32 = 10 /* whatever */ :3::10;
+
+mut var f: i32 = 3 + 5;
+
+mut var b: f32 = 3.5;

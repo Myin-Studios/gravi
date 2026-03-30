@@ -59,7 +59,7 @@ impl Generator {
             _ => { "nulltype" }
         };
         
-        match var.value().clone().unwrap_or(crate::parser::Expr::Identifier("null".to_string())) {
+        match var.value().clone().unwrap_or(crate::parser::Expr::Null) {
             crate::parser::Expr::Range(range) => {
                 let start = match range.start().as_ref() {
                     crate::parser::Expr::Literal(val) => val.to_string(),

@@ -1,7 +1,13 @@
 // this is a line comment!
+/*
+    multiline comment!
+*/
+
 mut var a: i32 = 5;
 
-!PAR mut var h: f32 = 10 /* whatever */ :3::10;
+!PAR mut var g: f32 = 0:3:10;
+
+!PAR mut var h: f32 = 10:3:10;
 
 mut var f: i32 = 3 + 5;
 

@@ -563,11 +563,11 @@ impl Parser {
                     let _ = tokens.pop();
                     Expr::Grouped(Box::new(inner))
                 }
-                _ => Expr::Identifier("null".to_string())
+                _ => Expr::Null
             }
         }
         else {
-            Expr::Identifier("null".to_string())
+            Expr::Null
         }
     }
     

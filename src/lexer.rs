@@ -1,7 +1,5 @@
 use std::{fs::File, io::Read};
 
-use colored::Colorize;
-
 #[derive(PartialEq, Debug, Clone)]
 pub enum Keyword
 {

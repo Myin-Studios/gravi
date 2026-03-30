@@ -115,17 +115,6 @@ pub enum Expr
     Null
 }
 
-#[derive(Debug)]
-pub enum ExprState
-{
-    Single,
-    RangeNoStep,
-    RangeStep,
-    Binary,
-    Unary,
-    Nothing,
-}
-
 #[derive(Debug, Clone)]
 pub struct Range
 {

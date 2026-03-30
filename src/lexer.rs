@@ -104,7 +104,6 @@ impl Token {
 
 pub struct Lexer
 {
-    content: String,
     chars: Vec<char>,
     line: usize,
     column: usize,
@@ -121,10 +120,11 @@ impl Lexer {
 
         let mut chars: Vec<char> = content.chars().collect();
         chars.reverse();
+
+        drop(content);
         
         Self
         {
-            content,
             chars,
             line: 1,
             column: 1,

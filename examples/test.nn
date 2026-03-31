@@ -17,3 +17,5 @@ var c: f32 = (3.5 + 5.3) * 3.3;
 
 // string
 var d: string = "hello!\nworld?";
+
+var e: bool = true;

@@ -123,6 +123,9 @@ impl CGenerator {
             Value::StringLiteral(s) => {
                 self.out.push_str(format!("\tconst char* {} = \"{}\";\n\n", var.identifier(), s).as_str());
             },
+            Value::Boolean(b) => {
+                self.out.push_str(format!("{}bool {} = {}", mutable, var.identifier(), b).as_str());
+            }
             Value::Null => {
 
             },
@@ -165,7 +168,8 @@ impl Backend for CGenerator {
     fn process(&mut self, prog: &Program) {
         self.out.push_str("#include <stdio.h>\n");
         self.out.push_str("#include <stdlib.h>\n");
-        self.out.push_str("#include <math.h>\n\n");
+        self.out.push_str("#include <math.h>\n");
+        self.out.push_str("#include <stdbool.h>\n\n");
 
         self.out.push_str("int main()\n");
         self.out.push_str("{\n");

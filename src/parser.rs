@@ -74,6 +74,7 @@ pub enum Value
 {
     Expression(Expr),
     StringLiteral(String),
+    Boolean(String),
     Null
 }
 
@@ -303,16 +304,22 @@ impl Parser {
                             },
                             Punctuation::SemiColon => break,
                             Punctuation::Quote => {
-                                if let Some(s) = tokens.pop()
+                                if self.expects == Expects::Assignment
                                 {
-                                    val = Some(match s.kind() {
-                                        TokenKind::Identifier(v) => Value::StringLiteral(v.to_string()),
-                                        TokenKind::Value(v) => Value::StringLiteral(v.to_string()),
-                                        _ => Value::StringLiteral("".to_string())
-                                    });
-                                }
+                                    if let Some(s) = tokens.pop()
+                                    {
+                                        val = Some(match s.kind() {
+                                            TokenKind::Identifier(v) => Value::StringLiteral(v.to_string()),
+                                            TokenKind::Value(v) => Value::StringLiteral(v.to_string()),
+                                            _ => Value::StringLiteral("".to_string())
+                                        });
+                                    }
+                                    
+                                    let _next = tokens.pop(); // for unclosed quote (error)
 
-                                let _next = tokens.pop(); // for unclosed quote
+                                    self.expects = Expects::Nothing;
+                                }
+                                
                             }
                             _ => {},
                         }

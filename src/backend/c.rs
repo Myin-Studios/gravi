@@ -1,4 +1,4 @@
-use crate::{backend::Backend, lexer::Operator, parser::{Expr, Parallelism, Program, VarDecl}};
+use crate::{backend::Backend, lexer::Operator, parser::{Expr, Parallelism, Program, Value, VarDecl}};
 
 pub struct CGenerator
 {
@@ -34,73 +34,97 @@ impl CGenerator {
                     crate::lexer::Numeric::F64 => "double",
                 }
             },
-            _ => { "nulltype" }
+            crate::lexer::Type::StringLiteral => {
+                "string"
+            },
+            crate::lexer::Type::Boolean => {
+                "bool"
+            },
+            crate::lexer::Type::Character => {
+                "char"
+            },
+            crate::lexer::Type::Custom(c) => {
+                c.as_str()
+            },
+            crate::lexer::Type::None => {
+                "nulltype"
+            },
         };
         
-        match var.value().as_ref().unwrap_or(&crate::parser::Expr::Null) {
-            crate::parser::Expr::Range(range) => {
-                let start = match range.start().as_ref() {
-                    crate::parser::Expr::Literal(val) => val.to_string(),
-                    _ => { String::from("0") }
-                };
-                let step = match range.step().as_ref().unwrap_or(&Box::new(Expr::Literal("1".to_string()))).as_ref() {
-                    crate::parser::Expr::Literal(val) => val.to_string(),
-                    _ => { String::from("1") }
-                };
-                let end = match range.end().as_ref() {
-                    crate::parser::Expr::Literal(val) => val.to_string(),
-                    _ => { String::from("1") }
-                };
-                let incl = match range.inclusive() {
-                    true => " + 1",
-                    false => "",
-                };
+        let mutable = if *var.mutable()
+        {
+            ""
+        }
+        else {
+            "const "
+        };
 
-                if start == end
-                {
-                    self.out.push_str(format!("\t{} {}[{}];\n", ty, var.identifier(), step).as_str());
+        match var.value().as_ref().unwrap_or(&crate::parser::Value::Null) {
+            Value::Expression(e) => {
+                match e {
+                    crate::parser::Expr::Range(range) => {
+                        let start = match range.start().as_ref() {
+                            crate::parser::Expr::Literal(val) => val.to_string(),
+                            _ => { String::from("0") }
+                        };
+                        let step = match range.step().as_ref().unwrap_or(&Box::new(Expr::Literal("1".to_string()))).as_ref() {
+                            crate::parser::Expr::Literal(val) => val.to_string(),
+                            _ => { String::from("1") }
+                        };
+                        let end = match range.end().as_ref() {
+                            crate::parser::Expr::Literal(val) => val.to_string(),
+                            _ => { String::from("1") }
+                        };
+                        let incl = match range.inclusive() {
+                            true => " + 1",
+                            false => "",
+                        };
 
-                    match par {
-                        Parallelism::CPU => {
-                            self.out.push_str("\t#pragma omp parallel for\n");
-                        },
-                        Parallelism::GPU => {},
-                        Parallelism::None => {},
-                    };
+                        if start == end
+                        {
+                            self.out.push_str(format!("\t{} {}[{}];\n", ty, var.identifier(), step).as_str());
 
-                    self.out.push_str(format!("\tfor (int i = 0; i < {}; i++) {}\n", step, "{").as_str());
-                    self.out.push_str(format!("\t\t{}[i] = {};\n", var.identifier(), start).as_str());
-                    self.out.push_str(format!("\t\tprintf(\"%f\\n\", {}[i]);\n", var.identifier()).as_str());
-                    self.out.push_str("\t}\n\n");
+                            match par {
+                                Parallelism::CPU => {
+                                    self.out.push_str("\t#pragma omp parallel for\n");
+                                },
+                                Parallelism::GPU => {},
+                                Parallelism::None => {},
+                            };
+
+                            self.out.push_str(format!("\tfor (int i = 0; i < {}; i++) {}\n", step, "{").as_str());
+                            self.out.push_str(format!("\t\t{}[i] = {};\n", var.identifier(), start).as_str());
+                            self.out.push_str(format!("\t\tprintf(\"%f\\n\", {}[i]);\n", var.identifier()).as_str());
+                            self.out.push_str("\t}\n\n");
+                        }
+                        else {
+                            self.out.push_str(format!("\tint sz_{} = (int)floor(({} - {}) / {}){};\n", var.identifier(), end, start, step, incl).as_str());
+                            self.out.push_str(format!("\t{}* {} = malloc(sz_{} * sizeof({}));\n", ty, var.identifier(), var.identifier(), ty).as_str());
+                            
+                            match par {
+                                Parallelism::CPU => {
+                                    self.out.push_str("\t#pragma omp parallel for\n");
+                                },
+                                Parallelism::GPU => {},
+                                Parallelism::None => {},
+                            };
+                            
+                            self.out.push_str(format!("\tfor (int i = 0; i < sz_{}; i++) {}\n", var.identifier(), "{").as_str());
+                            self.out.push_str(format!("\t\t{}[i] = {} + i * {};\n", var.identifier(), start, step).as_str());
+                            self.out.push_str("\t}\n\n");
+                        }
+                        
+                    },
+                    _ => {
+                        self.out.push_str(format!("\t{}{} {} = {};\n\n", mutable, ty, var.identifier(), self.gen_expr(e)).as_str());
+                    }
                 }
-                else {
-                    self.out.push_str(format!("\tint sz_{} = (int)floor(({} - {}) / {}){};\n", var.identifier(), end, start, step, incl).as_str());
-                    self.out.push_str(format!("\t{}* {} = malloc(sz_{} * sizeof({}));\n", ty, var.identifier(), var.identifier(), ty).as_str());
-                    
-                    match par {
-                        Parallelism::CPU => {
-                            self.out.push_str("\t#pragma omp parallel for\n");
-                        },
-                        Parallelism::GPU => {},
-                        Parallelism::None => {},
-                    };
-                    
-                    self.out.push_str(format!("\tfor (int i = 0; i < sz_{}; i++) {}\n", var.identifier(), "{").as_str());
-                    self.out.push_str(format!("\t\t{}[i] = {} + i * {};\n", var.identifier(), start, step).as_str());
-                    self.out.push_str("\t}\n\n");
-                }
-                
+            }
+            Value::StringLiteral(s) => {
+                self.out.push_str(format!("\tconst char* {} = \"{}\";\n\n", var.identifier(), s).as_str());
             },
-            _ => {
-                let mutable = if *var.mutable()
-                {
-                    ""
-                }
-                else {
-                    "const "
-                };
-                
-                self.out.push_str(format!("\t{}{} {} = {};\n\n", mutable, ty, var.identifier(), self.gen_expr(var.value().as_ref().unwrap_or(&Expr::Null))).as_str());
+            Value::Null => {
+
             },
         }
     }

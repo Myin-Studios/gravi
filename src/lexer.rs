@@ -33,7 +33,9 @@ pub enum Numeric
 pub enum Type
 {
     Numeric(Numeric),
-    StringLiteral(String),
+    StringLiteral,
+    Boolean,
+    Character,
     Custom(String),
     None,
 }
@@ -48,6 +50,8 @@ pub enum Punctuation
     SemiColon,
     RangeInclusive,
     Assignment,
+    SingleQuote,
+    Quote,
     LParen,
     RParen,
     LBracket,
@@ -134,57 +138,50 @@ impl Lexer {
 
     fn is_special(&mut self)
     {
-        if self.current() == ' '
+        if self.next() == ' '
         {
             let _ = self.advance();
-            self.column += 1;
         }
-        else if self.current() == '\n' {
+        else if self.next() == '\n' {
             let _ = self.advance();
             self.column = 1;
             self.line += 1;
         }
-        else if self.current() == '\t' {
+        else if self.next() == '\t' {
             let _ = self.advance();
-            self.column += 4;
         }
     }
 
     fn is_comment(&mut self)
     {
-        if self.current() == '/'
+        if self.next() == '/'
         {
             let mut c = self.advance();
 
-            if self.current() == '/'
+            if self.next() == '/'
             {
                 loop {
                     c = self.advance();
 
-                    self.column += 1;
-
                     if c == '\n'
                     {
                         self.line += 1;
+                        self.column = 1;
                         break;
                     }
                 }
             }
-            else if self.current() == '*' {
+            else if self.next() == '*' {
                 loop {
                     self.is_special(); // multiline comments
 
                     c = self.advance();
 
-                    self.column += 1;
-
                     if c == '*'
                     {
-                        if self.current() == '/'
+                        if self.next() == '/'
                         {
                             let _ = self.advance();
-                            
-                            self.column += 1;
                             
                             break;
                         }
@@ -198,45 +195,54 @@ impl Lexer {
     }
     
     fn is_punctuation(&self, ignore: Option<char>) -> bool {
-        let c = self.current();
+        let c = self.next();
         if Some(c) == ignore { return false; }
         matches!(c, '.' | ',' | ':' | ';' | '=' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']' | '{' | '}')
+    }
+
+    fn read_string_literal(&mut self) -> String
+    {
+        let mut word: String = String::new();
+
+        loop {
+            if self.next() != '"'
+            {
+                word.push(self.advance());
+            }
+            else {
+                break;
+            }
+        }
+
+        word
     }
     
     fn read_word(&mut self) -> String
     {
         let mut word: String = String::new();
         
-        if self.current().is_alphabetic() || self.current() == '!'
+        if self.next().is_alphabetic() || self.next() == '!'
         {
             word.push(self.advance());
             
-            self.column += 1;
-
             loop {
-                if !self.is_punctuation(None) && !self.current().is_whitespace() && self.current() != '\0'
+                if !self.is_punctuation(None) && !self.next().is_whitespace() && self.next() != '\0'
                 {
                     word.push(self.advance());
-
-                    self.column += 1;
                 }
                 else {
                     break;
                 }
             }
         }
-        else if self.current().is_ascii_digit()
+        else if self.next().is_ascii_digit()
         {
             word.push(self.advance());
             
-            self.column += 1;
-
             loop {
-                if self.current() != '\n' && !self.is_punctuation(Some('.')) && !self.current().is_whitespace() && self.current() != '\0'
+                if self.next() != '\n' && !self.is_punctuation(Some('.')) && !self.next().is_whitespace() && self.next() != '\0'
                 {
                     word.push(self.advance());
-
-                    self.column += 1;
                 }
                 else {
                     break;
@@ -276,7 +282,10 @@ impl Lexer {
             "f16" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F16)), self.line, self.column - word.len()),
             "f32" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F32)), self.line, self.column - word.len()),
             "f64" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F64)), self.line, self.column - word.len()),
-
+            "bool" => Token::new(TokenKind::Type(Type::Boolean), self.line, self.column - word.len()),
+            "char" => Token::new(TokenKind::Type(Type::Character), self.line, self.column - word.len()),
+            "string" => Token::new(TokenKind::Type(Type::StringLiteral), self.line, self.column - word.len()),
+            
             // Punctuation
             "." => Token::new(TokenKind::Punctuation(Punctuation::Dot), self.line, self.column - word.len()),
             ".." => Token::new(TokenKind::Punctuation(Punctuation::Spread), self.line, self.column - word.len()),
@@ -285,6 +294,8 @@ impl Lexer {
             "," => Token::new(TokenKind::Punctuation(Punctuation::Comma), self.line, self.column - word.len()),
             ";" => Token::new(TokenKind::Punctuation(Punctuation::SemiColon), self.line, self.column - word.len()),
             "=" => Token::new(TokenKind::Punctuation(Punctuation::Assignment), self.line, self.column - word.len()),
+            "'" => Token::new(TokenKind::Punctuation(Punctuation::SingleQuote), self.line, self.column - word.len()),
+            "\"" => Token::new(TokenKind::Punctuation(Punctuation::Quote), self.line, self.column - word.len()),
             "(" => Token::new(TokenKind::Punctuation(Punctuation::LParen), self.line, self.column - word.len()),
             ")" => Token::new(TokenKind::Punctuation(Punctuation::RParen), self.line, self.column - word.len()),
             "[" => Token::new(TokenKind::Punctuation(Punctuation::LBracket), self.line, self.column - word.len()),
@@ -310,15 +321,15 @@ impl Lexer {
         }
 
         let mut word: String = String::new();
-        
+
         self.is_special();
         self.is_comment();
 
-        match self.current() {
+        match self.next() {
             ':' => {
                 let c = self.advance();
 
-                if self.current() == ':'
+                if self.next() == ':'
                 {
                     word.push_str(format!("{}{}", c, self.advance()).as_str());
                 }
@@ -328,8 +339,9 @@ impl Lexer {
             },
             '.' => {
                 let c = self.advance();
+                self.column += 1;
 
-                if self.current() == '.'
+                if self.next() == '.'
                 {
                     word.push_str(format!("{}{}", c, self.advance()).as_str());
                 }
@@ -337,9 +349,31 @@ impl Lexer {
                     word.push(c);
                 }
             },
-            '=' | '+' | '-' | '*' | '/' | ';' | ',' | '(' | ')' | '[' | ']' | '{' | '}' => {
+            '=' | '+' | '-' | '*' | '/' | ';' | ',' | '(' | ')' | '[' | ']' | '{' | '}' | '\'' => {
                 word.push(self.advance());
             },
+            '"' => {
+                self.advance();
+
+                self.tokens.push(Token::new(
+                    TokenKind::Punctuation(Punctuation::Quote), self.line, self.column - 1
+                ));
+
+                if self.next() != '"'
+                {
+                    let s = self.read_string_literal();
+
+                    self.tokens.push(Token::new(
+                        TokenKind::Value(s.clone()), self.line, self.column - s.len()
+                    ));
+                }
+                
+                self.advance();
+
+                self.tokens.push(Token::new(
+                    TokenKind::Punctuation(Punctuation::Quote), self.line, self.column - 1
+                ));
+            }
             _ => {
                 word = self.read_word();
             }
@@ -363,10 +397,11 @@ impl Lexer {
 
     fn advance(&mut self) -> char
     {
+        self.column += 1;
         self.chars.pop().unwrap_or(' ')
     }
 
-    fn current(&self) -> char
+    fn next(&self) -> char
     {
         if self.chars.len() < 1
         {
@@ -385,6 +420,8 @@ impl Lexer {
                 break;
             }
         }
+
+        println!("\n{:#?}", self.tokens);
     }
 
     pub fn tokens(&self) -> &Vec<Token>

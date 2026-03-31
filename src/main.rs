@@ -77,6 +77,7 @@ fn build(input: String, filename: &String, ty: BackendType, target: Target, flag
         Generators::C(mut g) => {
             g.process(p.output());
 
+            let _ = std::fs::create_dir("out");
             let mut f = File::create("out/out.c").unwrap();
             let _ = f.write_all(g.output().as_bytes()).unwrap();
 

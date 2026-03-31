@@ -27,7 +27,7 @@ pub struct VarDecl
     mutable: bool,
     id: String,
     ty: Type,
-    val: Option<Expr>
+    val: Option<Value>
 }
 
 impl VarDecl {
@@ -63,10 +63,18 @@ impl VarDecl {
         &self.ty
     }
 
-    pub fn value(&self) -> &Option<Expr>
+    pub fn value(&self) -> &Option<Value>
     {
         &self.val
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum Value
+{
+    Expression(Expr),
+    StringLiteral(String),
+    Null
 }
 
 #[derive(Debug, Clone)]
@@ -249,7 +257,7 @@ impl Parser {
         let mut id: String = String::new();
         let mut ty: Type = Type::None;
         
-        let mut val: Option<Expr> = None;
+        let mut val: Option<Value> = None;
 
         loop {
             if let Some(t) = tokens.pop() {
@@ -263,7 +271,7 @@ impl Parser {
                         if self.expects == Expects::Assignment
                         {
                             tokens.push(t);
-                            val = Some(self.parse_expr(tokens));
+                            val = Some(Value::Expression(self.parse_expr(tokens)));
 
                             self.expects = Expects::Nothing;
                         }
@@ -281,7 +289,7 @@ impl Parser {
                                 if self.expects == Expects::Assignment
                                 {
                                     tokens.push(t);
-                                    val = Some(self.parse_expr(tokens));
+                                    val = Some(Value::Expression(self.parse_expr(tokens)));
 
                                     self.expects = Expects::Nothing;
                                 }
@@ -289,11 +297,23 @@ impl Parser {
                             Punctuation::LParen => {
                                 if self.expects == Expects::Assignment {
                                     tokens.push(t);
-                                    val = Some(self.parse_expr(tokens));
+                                    val = Some(Value::Expression(self.parse_expr(tokens)));
                                     self.expects = Expects::Nothing;
                                 }
                             },
                             Punctuation::SemiColon => break,
+                            Punctuation::Quote => {
+                                if let Some(s) = tokens.pop()
+                                {
+                                    val = Some(match s.kind() {
+                                        TokenKind::Identifier(v) => Value::StringLiteral(v.to_string()),
+                                        TokenKind::Value(v) => Value::StringLiteral(v.to_string()),
+                                        _ => Value::StringLiteral("".to_string())
+                                    });
+                                }
+
+                                let _next = tokens.pop(); // for unclosed quote
+                            }
                             _ => {},
                         }
                     },
@@ -302,7 +322,7 @@ impl Parser {
                         if self.expects == Expects::Assignment
                         {
                             tokens.push(t);
-                            val = Some(self.parse_expr(tokens));
+                            val = Some(Value::Expression(self.parse_expr(tokens)));
 
                             self.expects = Expects::Nothing;
                         }

@@ -1,4 +1,4 @@
-use crate::{backend::Backend, lexer::Operator, parser::{Expr, Parallelism, Program, Value, VarDecl}};
+use crate::{backend::Backend, lexer::{Operator, Type}, parser::{Expr, Function, Parallelism, Program, Value, VarDecl}};
 
 pub struct CGenerator
 {
@@ -14,42 +14,49 @@ impl CGenerator {
         }
     }
 
-    fn gen_var(&mut self, var: &VarDecl)
+    fn get_type(&self, ty: &Type) -> String
     {
-        let par = var.parallelism();
-
-        let ty = match var.ty() {
+        match ty {
             crate::lexer::Type::Numeric(numeric) => {
                 match numeric {
-                    crate::lexer::Numeric::U8 => "unsigned char",
-                    crate::lexer::Numeric::U16 => "unsigned short",
-                    crate::lexer::Numeric::U32 => "unsigned int",
-                    crate::lexer::Numeric::U64 => "unsigned long",
-                    crate::lexer::Numeric::I8 => "char",
-                    crate::lexer::Numeric::I16 => "short",
-                    crate::lexer::Numeric::I32 => "int",
-                    crate::lexer::Numeric::I64 => "long",
-                    crate::lexer::Numeric::F16 => "float",
-                    crate::lexer::Numeric::F32 => "float",
-                    crate::lexer::Numeric::F64 => "double",
+                    crate::lexer::Numeric::U8 => "unsigned char".to_string(),
+                    crate::lexer::Numeric::U16 => "unsigned short".to_string(),
+                    crate::lexer::Numeric::U32 => "unsigned int".to_string(),
+                    crate::lexer::Numeric::U64 => "unsigned long".to_string(),
+                    crate::lexer::Numeric::I8 => "char".to_string(),
+                    crate::lexer::Numeric::I16 => "short".to_string(),
+                    crate::lexer::Numeric::I32 => "int".to_string(),
+                    crate::lexer::Numeric::I64 => "long".to_string(),
+                    crate::lexer::Numeric::F16 => "float".to_string(), // C doesn't have "half" of a float
+                    crate::lexer::Numeric::F32 => "float".to_string(),
+                    crate::lexer::Numeric::F64 => "double".to_string(),
                 }
             },
             crate::lexer::Type::StringLiteral => {
-                "string"
+                "string".to_string()
             },
             crate::lexer::Type::Boolean => {
-                "bool"
+                "bool".to_string()
             },
             crate::lexer::Type::Character => {
-                "char"
+                "char".to_string()
             },
             crate::lexer::Type::Custom(c) => {
-                c.as_str()
+                c.to_string()
             },
             crate::lexer::Type::None => {
-                "nulltype"
+                "void".to_string()
             },
-        };
+        }
+    }
+
+    fn gen_var(&mut self, var: &VarDecl) -> String
+    {
+        let mut res: String = String::new();
+
+        let par = var.parallelism();
+
+        let ty = self.get_type(var.ty());
         
         let mutable = if *var.mutable()
         {
@@ -82,54 +89,56 @@ impl CGenerator {
 
                         if start == end
                         {
-                            self.out.push_str(format!("\t{} {}[{}];\n", ty, var.identifier(), step).as_str());
+                            res.push_str(format!("\t{} {}[{}];\n", ty, var.identifier(), step).as_str());
 
                             match par {
                                 Parallelism::CPU => {
-                                    self.out.push_str("\t#pragma omp parallel for\n");
+                                    res.push_str("\t#pragma omp parallel for\n");
                                 },
                                 Parallelism::GPU => {},
                                 Parallelism::None => {},
                             };
 
-                            self.out.push_str(format!("\tfor (int i = 0; i < {}; i++) {}\n", step, "{").as_str());
-                            self.out.push_str(format!("\t\t{}[i] = {};\n", var.identifier(), start).as_str());
-                            self.out.push_str(format!("\t\tprintf(\"%f\\n\", {}[i]);\n", var.identifier()).as_str());
-                            self.out.push_str("\t}\n\n");
+                            res.push_str(format!("\tfor (int i = 0; i < {}; i++) {}\n", step, "{").as_str());
+                            res.push_str(format!("\t\t{}[i] = {};\n", var.identifier(), start).as_str());
+                            res.push_str(format!("\t\tprintf(\"%f\\n\", {}[i]);\n", var.identifier()).as_str());
+                            res.push_str("\t}\n\n");
                         }
                         else {
-                            self.out.push_str(format!("\tint sz_{} = (int)floor(({} - {}) / {}){};\n", var.identifier(), end, start, step, incl).as_str());
-                            self.out.push_str(format!("\t{}* {} = malloc(sz_{} * sizeof({}));\n", ty, var.identifier(), var.identifier(), ty).as_str());
+                            res.push_str(format!("\tint sz_{} = (int)floor(({} - {}) / {}){};\n", var.identifier(), end, start, step, incl).as_str());
+                            res.push_str(format!("\t{}* {} = malloc(sz_{} * sizeof({}));\n", ty, var.identifier(), var.identifier(), ty).as_str());
                             
                             match par {
                                 Parallelism::CPU => {
-                                    self.out.push_str("\t#pragma omp parallel for\n");
+                                    res.push_str("\t#pragma omp parallel for\n");
                                 },
                                 Parallelism::GPU => {},
                                 Parallelism::None => {},
                             };
                             
-                            self.out.push_str(format!("\tfor (int i = 0; i < sz_{}; i++) {}\n", var.identifier(), "{").as_str());
-                            self.out.push_str(format!("\t\t{}[i] = {} + i * {};\n", var.identifier(), start, step).as_str());
-                            self.out.push_str("\t}\n\n");
+                            res.push_str(format!("\tfor (int i = 0; i < sz_{}; i++) {}\n", var.identifier(), "{").as_str());
+                            res.push_str(format!("\t\t{}[i] = {} + i * {};\n", var.identifier(), start, step).as_str());
+                            res.push_str("\t}\n\n");
                         }
                         
                     },
                     _ => {
-                        self.out.push_str(format!("\t{}{} {} = {};\n\n", mutable, ty, var.identifier(), self.gen_expr(e)).as_str());
+                        res.push_str(format!("\t{}{} {} = {};\n\n", mutable, ty, var.identifier(), self.gen_expr(e)).as_str());
                     }
                 }
             }
             Value::StringLiteral(s) => {
-                self.out.push_str(format!("\tconst char* {} = \"{}\";\n\n", var.identifier(), s).as_str());
+                res.push_str(format!("\tconst char* {} = \"{}\";\n\n", var.identifier(), s).as_str());
             },
             Value::Boolean(b) => {
-                self.out.push_str(format!("{}bool {} = {}", mutable, var.identifier(), b).as_str());
+                res.push_str(format!("\t{}bool {} = {};\n\n", mutable, var.identifier(), b).as_str());
             }
             Value::Null => {
 
             },
         }
+
+        res
     }
 
     fn gen_expr(&self, expr: &Expr) -> String
@@ -162,6 +171,59 @@ impl CGenerator {
 
         res
     }
+
+    fn gen_fun(&mut self, fun: &Function) -> String
+    {
+        let mut res: String = String::new();
+
+        let ret = if *fun.main() { "int".to_string() } else { self.get_type(fun.ret()) };
+        let id = fun.identifier();
+        
+        let mut params: String = String::new();
+
+        if !*fun.main()
+        {
+            for i in 0..fun.params().len()
+            {
+                let m = if *fun.params()[i].mutable() { "" } else { "const " };
+                let t = self.get_type(&fun.params()[i].ty());
+                let id = fun.params()[i].identifier();
+                let v = fun.params()[i].value();
+
+                if v.is_none() // C doesn't supports default values
+                {
+                    if i == fun.params().len() - 1
+                    {
+                        params.push_str(format!(" {}{} {}", m, t, id).as_str());
+                    }
+                    else {
+                        params.push_str(format!("{}{} {},", m, t, id).as_str());
+                    }
+                }
+            }
+        } // if main: ignored parameters for now
+
+        let body = if fun.body().is_empty()
+        {
+            ";".to_string()
+        } else {
+            let bd = if *fun.main()
+            {
+                let mut bd = "{\n\treturn 0;\n".to_string();
+                bd.push('}');
+                bd
+            }
+            else {
+                " {}".to_string()
+            };
+
+            bd
+        };
+
+        res.push_str(format!("{} {}({}){}\n\n", ret, id, params, body).as_str());
+
+        res
+    }
 }
 
 impl Backend for CGenerator {
@@ -171,20 +233,47 @@ impl Backend for CGenerator {
         self.out.push_str("#include <math.h>\n");
         self.out.push_str("#include <stdbool.h>\n\n");
 
-        self.out.push_str("int main()\n");
-        self.out.push_str("{\n");
+        let mut temp: String = String::new();
+        let mut is_main: bool = false;
 
         for item in prog.items()
         {
             match item {
                 crate::parser::Items::Var(var) => {
-                    self.gen_var(var);
+                    temp.push_str(self.gen_var(var).as_str());
                 },
+                crate::parser::Items::Fun(fun) => {
+                    is_main = *fun.main();
+
+                    let s = self.gen_fun(fun);
+                    self.out.push_str(s.as_str());
+                },
+                crate::parser::Items::Ret(val) => {
+                    
+                },
+                crate::parser::Items::None => {} // error! invalid statement, function, class or variable declaration!
             }
         }
+
+        if !is_main
+        {
+            if !temp.is_empty()
+            {
+                // error! unsupported global variables!
+                
+                self.out.push_str("int main()\n{\n");
+                self.out.push_str("\treturn 0;\n");
+                self.out.push_str("}\n");
+
+                return;
+            }
+
+            self.out.push_str("int main()\n{\n");
+            self.out.push_str(&temp);
+            self.out.push_str("\treturn 0;\n");
+            self.out.push_str("}\n");
+        }
         
-        self.out.push_str("\treturn 0;\n");
-        self.out.push_str("}\n");
     }
 
     fn output(&self) -> &String

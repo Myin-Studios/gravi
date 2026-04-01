@@ -1,0 +1,17 @@
+fun add_empty(a: i32, b: i32): i32;
+fun add(a: i32, b: i32): i32
+{
+    ret a + b;
+}
+
+fun div(a: i32, mut b: i32): f32
+{
+    ret a / b;
+}
+
+// no params function
+fun no_params() { // "none" return type
+    var localVar: string = "Hellowww!";
+}
+
+var e: bool = true;

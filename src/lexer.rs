@@ -16,6 +16,7 @@ pub enum Keyword
     Class,
     Ext,
     Fun,
+    Ret,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -163,8 +164,9 @@ impl Lexer {
                 loop {
                     c = self.advance();
 
-                    if c == '\n'
+                    if self.next() == '\n' || self.next() == '\0'
                     {
+                        self.advance();
                         self.line += 1;
                         self.column = 1;
                         break;
@@ -269,6 +271,7 @@ impl Lexer {
             "class" => Token::new(TokenKind::Keyword(Keyword::Class), self.line, self.column - word.len()),
             "type" => Token::new(TokenKind::Keyword(Keyword::Type), self.line, self.column - word.len()),
             "ext" => Token::new(TokenKind::Keyword(Keyword::Ext), self.line, self.column - word.len()),
+            "ret" => Token::new(TokenKind::Keyword(Keyword::Ret), self.line, self.column - word.len()),
 
             // Types
             "u8"  => Token::new(TokenKind::Type(Type::Numeric(Numeric::U8)), self.line, self.column - word.len()),

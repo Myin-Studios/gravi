@@ -9,7 +9,10 @@ pub struct Program
 #[derive(Debug)]
 pub enum Items
 {
-    Var(VarDecl)
+    Var(VarDecl),
+    Fun(Function),
+    Ret(Value),
+    None,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -166,11 +169,68 @@ impl Range {
     }
 }
 
+#[derive(Debug)]
+pub struct Function
+{
+    lambda: bool,
+    main: bool,
+    id: String,
+    params: Vec<VarDecl>,
+    ret: Type,
+    body: Vec<Items>
+}
+
+impl Function {
+    pub fn new() -> Self
+    {
+        Self
+        {
+            lambda: false,
+            main: false,
+            id: "".to_string(),
+            params: Vec::new(),
+            ret: Type::None,
+            body: Vec::new()
+        }
+    }
+
+    pub fn lambda(&self) -> &bool
+    {
+        &self.lambda
+    }
+
+    pub fn main(&self) -> &bool
+    {
+        &self.main
+    }
+    
+    pub fn identifier(&self) -> &String
+    {
+        &self.id
+    }
+
+    pub fn params(&self) -> &Vec<VarDecl>
+    {
+        &self.params
+    }
+
+    pub fn ret(&self) -> &Type
+    {
+        &self.ret
+    }
+
+    pub fn body(&self) -> &Vec<Items>
+    {
+        &self.body
+    }
+}
+
 #[derive(PartialEq, Debug)]
 pub enum Expects
 {
     Type,
     Assignment,
+    Body,
     Nothing,
 }
 
@@ -239,11 +299,16 @@ impl Parser {
                                 mutable = true;
                             },
                             Keyword::Var => {
-                                self.parse_var_decl(par.clone(), mutable, tokens);
+                                let var = Items::Var(self.parse_var_decl(par.clone(), mutable, tokens));
+                                self.prog.add(var);
 
                                 par = Parallelism::None;
                                 mutable = false;
                             },
+                            Keyword::Fun => {
+                                let fun = self.parse_function(tokens);
+                                self.prog.add(fun);
+                            }
                             _ => {}
                         }
                     },
@@ -253,7 +318,7 @@ impl Parser {
         }
     }
 
-    fn parse_var_decl(&mut self, par: Parallelism, mutable: bool, tokens: &mut Vec<Token>)
+    fn parse_var_decl(&mut self, par: Parallelism, mutable: bool, tokens: &mut Vec<Token>) -> VarDecl
     {
         let mut id: String = String::new();
         let mut ty: Type = Type::None;
@@ -269,71 +334,36 @@ impl Parser {
                     },
                     TokenKind::Keyword(_) => {},
                     TokenKind::Identifier(idt) => {
-                        if self.expects == Expects::Assignment
-                        {
-                            tokens.push(t);
-                            val = Some(Value::Expression(self.parse_expr(tokens)));
-
-                            self.expects = Expects::Nothing;
-                        }
-                        else {
-                            id = idt.to_string();
-                        }
+                        id = idt.to_string();
                     },
                     TokenKind::Punctuation(p) => {
                         match p {
                             Punctuation::Assignment => 
                             {
-                                self.expects = Expects::Assignment;
+                                val = Some(self.parse_value(tokens));
+                                break;
                             },
-                            Punctuation::Colon | Punctuation::RangeInclusive => {
-                                if self.expects == Expects::Assignment
+                            Punctuation::Colon => {
+                                if let Some(next) = tokens.last()
                                 {
-                                    tokens.push(t);
-                                    val = Some(Value::Expression(self.parse_expr(tokens)));
+                                    match next.kind() {
+                                        TokenKind::Type(t) => {
+                                            ty = t.to_owned();
+                                        },
+                                        _ => break
+                                    };
 
-                                    self.expects = Expects::Nothing;
+                                    tokens.pop();
                                 }
                             },
-                            Punctuation::LParen => {
-                                if self.expects == Expects::Assignment {
-                                    tokens.push(t);
-                                    val = Some(Value::Expression(self.parse_expr(tokens)));
-                                    self.expects = Expects::Nothing;
-                                }
-                            },
-                            Punctuation::SemiColon => break,
-                            Punctuation::Quote => {
-                                if self.expects == Expects::Assignment
-                                {
-                                    if let Some(s) = tokens.pop()
-                                    {
-                                        val = Some(match s.kind() {
-                                            TokenKind::Identifier(v) => Value::StringLiteral(v.to_string()),
-                                            TokenKind::Value(v) => Value::StringLiteral(v.to_string()),
-                                            _ => Value::StringLiteral("".to_string())
-                                        });
-                                    }
-                                    
-                                    let _next = tokens.pop(); // for unclosed quote (error)
-
-                                    self.expects = Expects::Nothing;
-                                }
-                                
+                            Punctuation::RParen => {
+                                tokens.push(t);
+                                break;
                             }
-                            _ => {},
+                            _ => break,
                         }
                     },
-                    TokenKind::Operator(_) => {},
-                    TokenKind::Value(_) => {
-                        if self.expects == Expects::Assignment
-                        {
-                            tokens.push(t);
-                            val = Some(Value::Expression(self.parse_expr(tokens)));
-
-                            self.expects = Expects::Nothing;
-                        }
-                    },
+                    _ => break
                 };
             }
             else {
@@ -341,16 +371,65 @@ impl Parser {
             }
         }
 
-        self.prog.add(Items::Var(
-            VarDecl
+        VarDecl
+        {
+            par,
+            mutable,
+            id,
+            ty,
+            val
+        }
+    }
+
+    fn parse_value(&mut self, tokens: &mut Vec<Token>) -> Value
+    {
+        let mut val: Value = Value::Null;
+
+        loop {
+            if let Some(t) = tokens.last()
             {
-                par,
-                mutable,
-                id,
-                ty,
-                val
+                match t.kind() {
+                    TokenKind::Punctuation(Punctuation::Colon | Punctuation::RangeInclusive) => { // :end or ::end or :step:end or :step::end
+                        val = Value::Expression(self.parse_expr(tokens));
+                        break;
+                    },
+                    TokenKind::Punctuation(Punctuation::Quote) => { // "some string literal"
+                        tokens.pop();
+                        
+                        if let Some(next) = tokens.pop()
+                        {
+                            match next.kind() {
+                                TokenKind::Identifier(v) | TokenKind::Value(v) => {
+                                    val = Value::StringLiteral(v.to_string());
+                                    break;
+                                },
+                                _ => break
+                            }
+                        }
+                    },
+                    TokenKind::Punctuation(Punctuation::LParen) => {
+                        val = Value::Expression(self.parse_expr(tokens));                        
+                    }
+                    TokenKind::Identifier(v) | TokenKind::Value(v) => { // true/false or some identifier
+                        val = if v == &"true".to_string()
+                        {
+                            tokens.pop();
+                            Value::Boolean("true".to_string())
+                        }
+                        else if v == &"false".to_string() {
+                            tokens.pop();
+                            Value::Boolean("false".to_string())
+                        }
+                        else {
+                            Value::Expression(self.parse_expr(tokens))
+                        }
+                    },
+                    _ => break
+                }
             }
-        ));
+        }
+
+        val
     }
 
     fn parse_expr(&mut self, tokens: &mut Vec<Token>) -> Expr
@@ -585,6 +664,155 @@ impl Parser {
         else {
             Expr::Null
         }
+    }
+
+    fn parse_function(&mut self, tokens: &mut Vec<Token>) -> Items
+    {
+        let id = if let Some(t) = tokens.pop()
+        {
+            match t.kind() {
+                TokenKind::Identifier(s) => s.to_string(),
+                _ => "".to_string() // error!
+            }
+        } else {
+            "".to_string() // error!
+        };
+
+        let main = id == "main".to_string();
+
+        let mut params: Vec<VarDecl> = Vec::new();
+        
+        let mut ret = Type::None;
+
+        let mut body: Vec<Items> = Vec::new();
+
+        loop {
+            if let Some(t) = tokens.pop()
+            {
+                if t.kind() == &TokenKind::Punctuation(Punctuation::LParen)
+                {
+                    loop {
+                        let mut par = Parallelism::None;
+                        let mut mutable = false;
+
+                        if let Some(next) = tokens.last() {
+                            if next.kind() == &TokenKind::Punctuation(Punctuation::RParen) {
+                                tokens.pop();
+                                break;
+                            }
+                            else if next.kind() == &TokenKind::Keyword(Keyword::Mut)
+                            {
+                                mutable = true;
+                                tokens.pop();
+                            }
+                            else if next.kind() == &TokenKind::Keyword(Keyword::PAR) {
+                                par = Parallelism::CPU;
+                                tokens.pop();
+                            }
+                            else if next.kind() == &TokenKind::Keyword(Keyword::GPU) {
+                                par = Parallelism::GPU;
+                                tokens.pop();
+                            }
+                        } else {
+                            break;
+                        }
+
+                        params.push(self.parse_var_decl(par, mutable, tokens));
+                    }
+                }
+                else if t.kind() == &TokenKind::Punctuation(Punctuation::Colon) {
+                    if let Some(next) = tokens.last()
+                    {
+                        match next.kind() {
+                            TokenKind::Type(ty) => {
+                                ret = ty.to_owned();
+                                tokens.pop();
+                            },
+                            _ => {} // error! unsupported type!
+                        }
+                    }
+                }
+                else if t.kind() == &TokenKind::Punctuation(Punctuation::LBrace) {
+                    loop {
+                        if let Some(next) = tokens.last() {
+                            if next.kind() == &TokenKind::Punctuation(Punctuation::RBrace) {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+
+                        body.push(self.parse_block(tokens));
+                    };
+                }
+                else if t.kind() == &TokenKind::Punctuation(Punctuation::SemiColon)
+                    || t.kind() == &TokenKind::Punctuation(Punctuation::RBrace) {
+                    break;
+                }
+            }
+        }
+
+        Items::Fun(
+            Function
+            {
+                lambda: false,
+                main,
+                id,
+                params,
+                ret,
+                body,
+            }
+        )
+    }
+
+    fn parse_block(&mut self, tokens: &mut Vec<Token>) -> Items
+    {
+        let mut mutable: bool = false;
+        let mut par: Parallelism = Parallelism::None;
+        let mut var: Items = Items::None;
+
+        loop {
+            if tokens.is_empty()
+            {
+                break;
+            }
+
+            if let Some(t) = tokens.pop()
+            {
+                match t.kind() {
+                    TokenKind::Keyword(kw) => 
+                    {
+                        match kw {
+                            Keyword::GPU => {
+                                par = Parallelism::GPU;
+                            },
+                            Keyword::PAR => {
+                                par = Parallelism::CPU
+                            },
+                            Keyword::Mut => {
+                                mutable = true;
+                            },
+                            Keyword::Var => {
+                                var = Items::Var(self.parse_var_decl(par.clone(), mutable, tokens));
+                                break;
+                            },
+                            Keyword::Ret => {
+                                var = Items::Ret(self.parse_value(tokens));
+                                break;
+                            }
+                            _ => { break; } // error! unsupported code inside a code block! (like function declarations, only lambda functions are supported)
+                        }
+                    },
+                    TokenKind::Punctuation(Punctuation::RBrace) => {
+                        tokens.push(t);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        var
     }
     
     pub fn output(&self) -> &Program

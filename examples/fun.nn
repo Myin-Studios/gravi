@@ -19,3 +19,11 @@ fun no_params() { // "none" return type
 
 var e: bool = true; // unsupported global variable
 
+fun main()
+{
+    div(1, 2); // Items::Call(Expr::Literal(1), Expr::Literal(2))
+    div(1, div(div(8, 2), 2)); // Items::Call(Expr::Literal(1), Expr::Call(Expr::Literal(4), Expr::Literal(2)))
+    
+    // FUTURE!
+    // div(1, || => { ret 4 - 2 }); // Calling Items::Call(Expr::Literal(1), Items::Fun()) where Fun() is a Items::Fun with "lambda" = true
+}

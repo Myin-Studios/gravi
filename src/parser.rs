@@ -12,6 +12,7 @@ pub enum Items
     Var(VarDecl),
     Fun(Function),
     Ret(Value),
+    Call(String, Vec<Value>),
     None,
 }
 
@@ -78,6 +79,7 @@ pub enum Value
     Expression(Expr),
     StringLiteral(String),
     Boolean(String),
+    Call(String, Vec<Value>),
     Null
 }
 
@@ -124,6 +126,7 @@ pub enum Expr
     Range(Range),
     Binary(Binary),
     Grouped(Box<Expr>),
+    Call(Vec<Value>),
     Null
 }
 
@@ -384,7 +387,7 @@ impl Parser {
         let mut val: Value = Value::Null;
 
         loop {
-            if let Some(t) = tokens.last()
+            if let Some(t) = tokens.last().cloned()
             {
                 match t.kind() {
                     TokenKind::Punctuation(Punctuation::Colon | Punctuation::RangeInclusive) => { // :end or ::end or :step:end or :step::end
@@ -419,8 +422,26 @@ impl Parser {
                             Value::Boolean("false".to_string())
                         }
                         else {
-                            Value::Expression(self.parse_expr(tokens))
-                        }
+                            let temp = tokens.pop().unwrap();
+
+                            if let Some(next) = tokens.last()
+                            {
+                                if next.kind() == &TokenKind::Punctuation(Punctuation::LParen)
+                                {
+                                    let params: Vec<Value> = self.parse_args(tokens);
+
+                                    return Value::Call(v.to_string(), params)
+                                }
+                                else {
+                                    tokens.push(temp);
+                                    
+                                    return Value::Expression(self.parse_expr(tokens))
+                                };
+                            }
+
+                            Value::Null
+                        };
+                        break;
                     },
                     _ => break
                 }
@@ -794,6 +815,17 @@ impl Parser {
                     TokenKind::Punctuation(Punctuation::RBrace) => {
                         tokens.push(t);
                         break;
+                    },
+                    TokenKind::Identifier(id) => {
+                        if let Some(next) = tokens.last()
+                        {
+                            if next.kind() == &TokenKind::Punctuation(Punctuation::LParen)
+                            {
+                                let params: Vec<Value> = self.parse_args(tokens);
+
+                                stmts.push(Items::Call(id.to_string(), params));
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -803,6 +835,30 @@ impl Parser {
         stmts
     }
     
+    fn parse_args(&mut self, tokens: &mut Vec<Token>) -> Vec<Value>
+    {
+        let mut vals: Vec<Value> = Vec::new();
+
+        tokens.pop();
+
+        loop {
+            if let Some(next) = tokens.last() {
+                if next.kind() == &TokenKind::Punctuation(Punctuation::RParen) {
+                    tokens.pop();
+                    break;
+                } else if next.kind() == &TokenKind::Punctuation(Punctuation::Comma) {
+                    tokens.pop();
+                }
+            } else {
+                break;
+            }
+            
+            vals.push(self.parse_value(tokens));
+        }
+
+        vals
+    }
+
     pub fn output(&self) -> &Program
     {
         println!("{:#?}", self.prog);

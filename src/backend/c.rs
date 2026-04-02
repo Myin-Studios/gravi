@@ -136,6 +136,7 @@ impl CGenerator {
             Value::Null => {
 
             },
+            Value::Call(id, values) => {},
         }
 
         res
@@ -207,35 +208,52 @@ impl CGenerator {
         {
             ";".to_string()
         } else {
-            let bd = if *fun.main()
+            let mut bd = " {\n\n".to_string();
+
+            for item in fun.body()
             {
-                let mut bd = " {\n\treturn 0;\n".to_string();
-                bd.push('}');
-                bd
-            }
-            else {
-                let mut bd = " {\n\n".to_string();
-                
-                for item in fun.body()
-                {
-                    match item {
-                        Items::Var(var) => {
-                            bd.push_str(self.gen_var(var).as_str());
-                        },
-                        Items::Fun(_) => {}, // function declarations are not supported here!
-                        Items::Ret(val) => bd.push_str(self.gen_ret(val).as_str()),
-                        Items::None => {}, // idk, error?
-                    }
+                match item {
+                    Items::Var(var) => {
+                        bd.push_str(self.gen_var(var).as_str());
+                    },
+                    Items::Fun(_) => {}, // function declarations are not supported here!
+                    Items::Ret(val) => bd.push_str(self.gen_ret(val).as_str()),
+                    Items::Call(id, vals) => {
+                        bd.push_str(format!("\t{}({});\n", id, self.gen_call(vals)).as_str());
+                    },
+                    Items::None => {}, // idk, error?
                 }
-
-                bd.push_str("\n}");
-                bd
-            };
-
+            }
+            
+            bd.push_str("\n}");
+            
             bd
         };
 
         res.push_str(format!("{} {}({}){}\n\n", ret, id, params, body).as_str());
+
+        res
+    }
+
+    fn gen_call(&mut self, vals: &Vec<Value>) -> String
+    {
+        let mut res: String = String::new();
+
+        for (i, val) in vals.into_iter().enumerate()
+        {
+            match val {
+                Value::Expression(expr) => res.push_str(self.gen_expr(expr).as_str()),
+                Value::StringLiteral(s) => res.push_str(format!("\"{}\"", s).as_str()),
+                Value::Boolean(b) => res.push_str(b),
+                Value::Call(id, values) => res.push_str(format!("{}({})", id, self.gen_call(values)).as_str()),
+                Value::Null => res.push_str(""),
+            }
+
+            if i < vals.len() - 1
+            {
+                res.push_str(", ");
+            }
+        }
 
         res
     }
@@ -248,6 +266,7 @@ impl CGenerator {
             Value::Expression(expr) => self.gen_expr(expr),
             Value::StringLiteral(str) => str.to_string(),
             Value::Boolean(b) => b.to_string(),
+            Value::Call(id, vals) => "".to_string(),
             Value::Null => "".to_string(),
         }).as_str());
 
@@ -278,6 +297,7 @@ impl Backend for CGenerator {
                     self.out.push_str(s.as_str());
                 },
                 crate::parser::Items::Ret(_) => {}, // ignored because "ret" can't be in a global context
+                crate::parser::Items::Call(id, vals) => {},
                 crate::parser::Items::None => {} // error! invalid statement, function, class or variable declaration!
             }
         }

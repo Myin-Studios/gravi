@@ -402,6 +402,7 @@ impl Parser {
                             match next.kind() {
                                 TokenKind::Identifier(v) | TokenKind::Value(v) => {
                                     val = Value::StringLiteral(v.to_string());
+                                    tokens.pop();
                                     break;
                                 },
                                 _ => break

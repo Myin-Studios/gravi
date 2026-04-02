@@ -33,7 +33,7 @@ impl CGenerator {
                 }
             },
             crate::lexer::Type::StringLiteral => {
-                "string".to_string()
+                "char*".to_string()
             },
             crate::lexer::Type::Boolean => {
                 "bool".to_string()
@@ -178,7 +178,11 @@ impl CGenerator {
         let mut res: String = String::new();
 
         let ret = if *fun.main() { "int".to_string() } else { self.get_type(fun.ret()) };
-        let id = fun.identifier();
+        let id = if fun.identifier() == "main" { "main".to_string() } else {
+            let mut i = String::from("nn_");
+            i.push_str(fun.identifier().as_str());
+            i
+        };
         
         let mut params: String = String::new();
 
@@ -219,7 +223,13 @@ impl CGenerator {
                     Items::Fun(_) => {}, // function declarations are not supported here!
                     Items::Ret(val) => bd.push_str(self.gen_ret(val).as_str()),
                     Items::Call(id, vals) => {
-                        bd.push_str(format!("\t{}({});\n", id, self.gen_call(vals)).as_str());
+                        if id == "show"
+                        {
+                            bd.push_str(self.gen_show(vals).as_str())
+                        }
+                        else {
+                            bd.push_str(format!("\tnn_{}({});\n", id, self.gen_call(vals)).as_str());
+                        }
                     },
                     Items::None => {}, // idk, error?
                 }
@@ -245,7 +255,7 @@ impl CGenerator {
                 Value::Expression(expr) => res.push_str(self.gen_expr(expr).as_str()),
                 Value::StringLiteral(s) => res.push_str(format!("\"{}\"", s).as_str()),
                 Value::Boolean(b) => res.push_str(b),
-                Value::Call(id, values) => res.push_str(format!("{}({})", id, self.gen_call(values)).as_str()),
+                Value::Call(id, values) => res.push_str(format!("nn_{}({})", id, self.gen_call(values)).as_str()),
                 Value::Null => res.push_str(""),
             }
 
@@ -254,6 +264,34 @@ impl CGenerator {
                 res.push_str(", ");
             }
         }
+
+        res
+    }
+
+    fn gen_show(&mut self, vals: &Vec<Value>) -> String
+    {
+        let mut res: String = String::from("\tprintf(");
+
+        for (i, val) in vals.into_iter().enumerate()
+        {
+            match val {
+                Value::Expression(expr) => res.push_str(format!("\"%g\\n\", {}", self.gen_expr(expr)).as_str()),
+                Value::StringLiteral(s) => res.push_str(format!("\"%s\\n\", \"{}\"", s).as_str()),
+                Value::Boolean(b) => {
+                    if b == "true"
+                    {
+                        res.push_str(format!("\"%s\\n\", \"true\"").as_str())
+                    }
+                    else {
+                        res.push_str(format!("\"%s\\n\", \"false\"").as_str())
+                    }
+                },
+                Value::Call(id, values) => res.push_str(format!("\"%g\\n\", nn_{}({})", id, self.gen_call(values)).as_str()),
+                Value::Null => res.push_str("\"\""),
+            }
+        }
+
+        res.push_str(");\n");
 
         res
     }

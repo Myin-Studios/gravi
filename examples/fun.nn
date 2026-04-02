@@ -4,10 +4,10 @@ fun add(a: i32, b: i32): i32
     ret a + b;
 }
 
-fun div(a: i32, mut b: i32): f32
+fun div(a: f32, b: f32): f32
 {
     ret a / b
-    var aaa: string = "heh!";
+    // var aaa: string = "heh!";
 }
 
 // no params function
@@ -19,11 +19,21 @@ fun no_params() { // "none" return type
 
 var e: bool = true; // unsupported global variable
 
+fun return_string(str: string): string
+{
+    ret str;
+}
+
 fun main()
 {
-    div(1, 2); // Items::Call(Expr::Literal(1), Expr::Literal(2))
-    div(1, div(div(8, 2), 2)); // Items::Call(Expr::Literal(1), Expr::Call(Expr::Literal(4), Expr::Literal(2)))
+    // div(1, 2); // Items::Call(Expr::Literal(1), Expr::Literal(2))
     
+    // First debug function:
+    show(div(1, div(div(8, 2), 2))); // Items::Call(Expr::Literal(1), Value::Call(Value::Call(8, 2), Expr::Literal(2)))
+    show("Woohooo!");
+    show(true);
+    show(return_string("String from function!"));
+
     // FUTURE!
     // div(1, || => { ret 4 - 2 }); // Calling Items::Call(Expr::Literal(1), Items::Fun()) where Fun() is a Items::Fun with "lambda" = true
 }

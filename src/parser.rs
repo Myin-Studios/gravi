@@ -237,7 +237,6 @@ pub enum Expects
 pub struct Parser
 {
     prog: Program,
-    expects: Expects
 }
 
 impl Program {
@@ -266,7 +265,6 @@ impl Parser {
         Self
         {
             prog: Program::new(),
-            expects: Expects::Nothing
         }
     }
 
@@ -299,7 +297,7 @@ impl Parser {
                                 mutable = true;
                             },
                             Keyword::Var => {
-                                let var = Items::Var(self.parse_var_decl(par.clone(), mutable, tokens));
+                                let var = Items::Var(self.parse_var_decl(&par, mutable, tokens));
                                 self.prog.add(var);
 
                                 par = Parallelism::None;
@@ -318,7 +316,7 @@ impl Parser {
         }
     }
 
-    fn parse_var_decl(&mut self, par: Parallelism, mutable: bool, tokens: &mut Vec<Token>) -> VarDecl
+    fn parse_var_decl(&mut self, par: &Parallelism, mutable: bool, tokens: &mut Vec<Token>) -> VarDecl
     {
         let mut id: String = String::new();
         let mut ty: Type = Type::None;
@@ -373,7 +371,7 @@ impl Parser {
 
         VarDecl
         {
-            par,
+            par: par.clone(),
             mutable,
             id,
             ty,
@@ -717,7 +715,7 @@ impl Parser {
                             break;
                         }
 
-                        params.push(self.parse_var_decl(par, mutable, tokens));
+                        params.push(self.parse_var_decl(&par, mutable, tokens));
                     }
                 }
                 else if t.kind() == &TokenKind::Punctuation(Punctuation::Colon) {
@@ -733,17 +731,7 @@ impl Parser {
                     }
                 }
                 else if t.kind() == &TokenKind::Punctuation(Punctuation::LBrace) {
-                    loop {
-                        if let Some(next) = tokens.last() {
-                            if next.kind() == &TokenKind::Punctuation(Punctuation::RBrace) {
-                                break;
-                            }
-                        } else {
-                            break;
-                        }
-
-                        body.push(self.parse_block(tokens));
-                    };
+                    body.extend(self.parse_block(tokens));
                 }
                 else if t.kind() == &TokenKind::Punctuation(Punctuation::SemiColon)
                     || t.kind() == &TokenKind::Punctuation(Punctuation::RBrace) {
@@ -765,11 +753,11 @@ impl Parser {
         )
     }
 
-    fn parse_block(&mut self, tokens: &mut Vec<Token>) -> Items
+    fn parse_block(&mut self, tokens: &mut Vec<Token>) -> Vec<Items>
     {
         let mut mutable: bool = false;
         let mut par: Parallelism = Parallelism::None;
-        let mut var: Items = Items::None;
+        let mut stmts: Vec<Items> = Vec::new();
 
         loop {
             if tokens.is_empty()
@@ -793,12 +781,12 @@ impl Parser {
                                 mutable = true;
                             },
                             Keyword::Var => {
-                                var = Items::Var(self.parse_var_decl(par.clone(), mutable, tokens));
-                                break;
+                                stmts.push(Items::Var(self.parse_var_decl(&par, mutable, tokens)));
+                                par = Parallelism::None;
+                                mutable = false;
                             },
                             Keyword::Ret => {
-                                var = Items::Ret(self.parse_value(tokens));
-                                break;
+                                stmts.push(Items::Ret(self.parse_value(tokens)));
                             }
                             _ => { break; } // error! unsupported code inside a code block! (like function declarations, only lambda functions are supported)
                         }
@@ -812,7 +800,7 @@ impl Parser {
             }
         }
 
-        var
+        stmts
     }
     
     pub fn output(&self) -> &Program

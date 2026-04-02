@@ -6,12 +6,16 @@ fun add(a: i32, b: i32): i32
 
 fun div(a: i32, mut b: i32): f32
 {
-    ret a / b;
+    ret a / b
+    var aaa: string = "heh!";
 }
 
 // no params function
 fun no_params() { // "none" return type
-    var localVar: string = "Hellowww!";
+    var localVar: string = "Hellowww!";; // added multiple ';' to check the parser
+    ;
+    var booooool: bool = false;
 }
 
-var e: bool = true;
+var e: bool = true; // unsupported global variable
+

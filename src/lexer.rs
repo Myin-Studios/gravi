@@ -162,7 +162,7 @@ impl Lexer {
             if self.next() == '/'
             {
                 loop {
-                    c = self.advance();
+                    self.advance();
 
                     if self.next() == '\n' || self.next() == '\0'
                     {

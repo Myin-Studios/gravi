@@ -1,4 +1,4 @@
-use crate::{backend::Backend, lexer::{Operator, Type}, parser::{Expr, Function, Parallelism, Program, Value, VarDecl}};
+use crate::{backend::Backend, lexer::{Operator, Type}, parser::{Expr, Function, Items, Parallelism, Program, Value, VarDecl}};
 
 pub struct CGenerator
 {
@@ -118,20 +118,20 @@ impl CGenerator {
                             
                             res.push_str(format!("\tfor (int i = 0; i < sz_{}; i++) {}\n", var.identifier(), "{").as_str());
                             res.push_str(format!("\t\t{}[i] = {} + i * {};\n", var.identifier(), start, step).as_str());
-                            res.push_str("\t}\n\n");
+                            res.push_str("\t}\n");
                         }
                         
                     },
                     _ => {
-                        res.push_str(format!("\t{}{} {} = {};\n\n", mutable, ty, var.identifier(), self.gen_expr(e)).as_str());
+                        res.push_str(format!("\t{}{} {} = {};\n", mutable, ty, var.identifier(), self.gen_expr(e)).as_str());
                     }
                 }
             }
             Value::StringLiteral(s) => {
-                res.push_str(format!("\tconst char* {} = \"{}\";\n\n", var.identifier(), s).as_str());
+                res.push_str(format!("\tconst char* {} = \"{}\";\n", var.identifier(), s).as_str());
             },
             Value::Boolean(b) => {
-                res.push_str(format!("\t{}bool {} = {};\n\n", mutable, var.identifier(), b).as_str());
+                res.push_str(format!("\t{}bool {} = {};\n", mutable, var.identifier(), b).as_str());
             }
             Value::Null => {
 
@@ -209,18 +209,47 @@ impl CGenerator {
         } else {
             let bd = if *fun.main()
             {
-                let mut bd = "{\n\treturn 0;\n".to_string();
+                let mut bd = " {\n\treturn 0;\n".to_string();
                 bd.push('}');
                 bd
             }
             else {
-                " {}".to_string()
+                let mut bd = " {\n\n".to_string();
+                
+                for item in fun.body()
+                {
+                    match item {
+                        Items::Var(var) => {
+                            bd.push_str(self.gen_var(var).as_str());
+                        },
+                        Items::Fun(_) => {}, // function declarations are not supported here!
+                        Items::Ret(val) => bd.push_str(self.gen_ret(val).as_str()),
+                        Items::None => {}, // idk, error?
+                    }
+                }
+
+                bd.push_str("\n}");
+                bd
             };
 
             bd
         };
 
         res.push_str(format!("{} {}({}){}\n\n", ret, id, params, body).as_str());
+
+        res
+    }
+
+    fn gen_ret(&mut self, val: &Value) -> String
+    {
+        let mut res: String = String::new();
+
+        res.push_str(format!("\treturn {};\n", match val {
+            Value::Expression(expr) => self.gen_expr(expr),
+            Value::StringLiteral(str) => str.to_string(),
+            Value::Boolean(b) => b.to_string(),
+            Value::Null => "".to_string(),
+        }).as_str());
 
         res
     }
@@ -248,9 +277,7 @@ impl Backend for CGenerator {
                     let s = self.gen_fun(fun);
                     self.out.push_str(s.as_str());
                 },
-                crate::parser::Items::Ret(val) => {
-                    
-                },
+                crate::parser::Items::Ret(_) => {}, // ignored because "ret" can't be in a global context
                 crate::parser::Items::None => {} // error! invalid statement, function, class or variable declaration!
             }
         }

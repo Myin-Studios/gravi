@@ -1,4 +1,6 @@
-use crate::lexer::*;
+use colored::Colorize;
+
+use crate::{error::{NyonError, Reporter}, lexer::*};
 
 #[derive(Debug)]
 pub struct Program
@@ -240,6 +242,7 @@ pub enum Expects
 pub struct Parser
 {
     prog: Program,
+    rep: Reporter,
 }
 
 impl Program {
@@ -268,6 +271,7 @@ impl Parser {
         Self
         {
             prog: Program::new(),
+            rep: Reporter::new(),
         }
     }
 
@@ -333,7 +337,6 @@ impl Parser {
                     TokenKind::Type(t) => {
                         ty = t.to_owned();
                     },
-                    TokenKind::Keyword(_) => {},
                     TokenKind::Identifier(idt) => {
                         id = idt.to_string();
                     },
@@ -351,7 +354,14 @@ impl Parser {
                                         TokenKind::Type(t) => {
                                             ty = t.to_owned();
                                         },
-                                        _ => break
+                                        _ => {
+                                            self.rep.add(NyonError::throw(crate::error::Kind::ExpectedReturnType)
+                                                                    .file(t.file())
+                                                                    .at(t.line(), t.column())
+                                                                    .hint(format!("Try writing a valid type, like numerics (u16, i16, f16, ...), string, bool or a user-defined type.\nBefore that, I'll consider this function with \"{}\" as its type!", "none".bright_blue().bold()).as_str()));
+                                            
+                                            break;
+                                        }
                                     };
 
                                     tokens.pop();
@@ -364,7 +374,14 @@ impl Parser {
                             _ => break,
                         }
                     },
-                    _ => break
+                    _ => {
+                        self.rep.add(NyonError::throw(crate::error::Kind:: UnexpectedToken(t.clone()))
+                                                .file(t.file())
+                                                .at(t.line(), t.column())
+                                                .hint(format!("Try writing a valid token here. I don't know, like \"{}: {} = {};\"", "myvar".bright_blue().bold(), "mytype".bright_blue().bold(), "myvalue".bright_blue().bold()).as_str()));
+                        
+                        break;
+                    }
                 };
             }
             else {
@@ -444,7 +461,18 @@ impl Parser {
                         };
                         break;
                     },
-                    _ => break
+                    TokenKind::Punctuation(Punctuation::RParen) => {
+                        tokens.pop();
+                        break;
+                    }
+                    _ => {
+                        self.rep.add(NyonError::throw(crate::error::Kind::ExpectedValue)
+                                                .file(t.file())
+                                                .at(t.line(), t.column())
+                                                .hint(format!("Write a valid value here, like a binary expression, an identifier, a literal (string or numeric), a range and so on.").as_str()));
+
+                        break;
+                    }
                 }
             }
         }
@@ -678,7 +706,14 @@ impl Parser {
                     let _ = tokens.pop();
                     Expr::Grouped(Box::new(inner))
                 }
-                _ => Expr::Null
+                _ => {
+                    self.rep.add(NyonError::throw(crate::error::Kind:: UnexpectedToken(t.clone()))
+                                                .file(t.file())
+                                                .at(t.line(), t.column())
+                                                .hint(format!("Try writing a valid expression here, like a binary expression, an identifier, a literal or a range.").as_str()));
+
+                    Expr::Null
+                }
             }
         }
         else {
@@ -692,7 +727,13 @@ impl Parser {
         {
             match t.kind() {
                 TokenKind::Identifier(s) => s.to_string(),
-                _ => "".to_string() // error!
+                _ => {
+                    self.rep.add(NyonError::throw(crate::error::Kind::ExpectedFunctionName)
+                                            .file(t.file())
+                                            .at(t.line(), t.column())
+                                            .hint("Try typing a name without numbers or special characters as first character!"));
+                    "".to_string()
+                }
             }
         } else {
             "".to_string() // error!
@@ -734,6 +775,10 @@ impl Parser {
                                 tokens.pop();
                             }
                         } else {
+                            self.rep.add(NyonError::throw(crate::error::Kind::UnclosedParenthesis)
+                                            .file(t.file())
+                                            .at(t.line(), t.column())
+                                            .hint(format!("Try writing {} to close the parameters declaration.", ")".bright_blue().bold()).as_str()));
                             break;
                         }
 
@@ -748,7 +793,12 @@ impl Parser {
                                 ret = ty.to_owned();
                                 tokens.pop();
                             },
-                            _ => {} // error! unsupported type!
+                            _ => {
+                                self.rep.add(NyonError::throw(crate::error::Kind::ExpectedReturnType)
+                                            .file(t.file())
+                                            .at(t.line(), t.column())
+                                            .hint(format!("Try writing a valid return type, like numerics (u16, i16, f16, ...), string, bool or a user-defined type.\nBefore that, I'll consider this function with \"{}\" as its return type!", "none".bright_blue().bold()).as_str()));
+                            }
                         }
                     }
                 }
@@ -757,6 +807,9 @@ impl Parser {
                 }
                 else if t.kind() == &TokenKind::Punctuation(Punctuation::SemiColon)
                     || t.kind() == &TokenKind::Punctuation(Punctuation::RBrace) {
+                    break;
+                }
+                else {
                     break;
                 }
             }
@@ -810,7 +863,14 @@ impl Parser {
                             Keyword::Ret => {
                                 stmts.push(Items::Ret(self.parse_value(tokens)));
                             }
-                            _ => { break; } // error! unsupported code inside a code block! (like function declarations, only lambda functions are supported)
+                            _ => {
+                                self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
+                                            .file(t.file())
+                                            .at(t.line(), t.column())
+                                            .hint(format!("Write a valid statement, like variable declarations, if-else statement, loop...").as_str()));
+
+                                break;
+                            } // error! unsupported code inside a code block! (like function declarations, only lambda functions are supported)
                         }
                     },
                     TokenKind::Punctuation(Punctuation::RBrace) => {
@@ -840,24 +900,45 @@ impl Parser {
     {
         let mut vals: Vec<Value> = Vec::new();
 
-        tokens.pop();
+        let tok = tokens.pop();
 
         loop {
             if let Some(next) = tokens.last() {
                 if next.kind() == &TokenKind::Punctuation(Punctuation::RParen) {
                     tokens.pop();
                     break;
-                } else if next.kind() == &TokenKind::Punctuation(Punctuation::Comma) {
-                    tokens.pop();
                 }
             } else {
+                if let Some(t) = tok
+                {
+                    self.rep.add(NyonError::throw(crate::error::Kind::UnclosedParenthesis)
+                                            .file(t.file())
+                                            .at(t.line(), t.column())
+                                            .hint(format!("Try writing {} to close the parameters list.", ")".bright_blue().bold()).as_str()));
+                }
                 break;
             }
             
-            vals.push(self.parse_value(tokens));
+            let v = self.parse_value(tokens);
+
+            if matches!(v, Value::Null)
+            {
+                break;
+            }
+
+            if let Some(next) = tokens.last() {
+                if next.kind() == &TokenKind::Punctuation(Punctuation::Comma) {
+                    tokens.pop();
+                }
+            }
         }
 
         vals
+    }
+
+    pub fn reporter(&self) -> &Reporter
+    {
+        &self.rep
     }
 
     pub fn output(&self) -> &Program

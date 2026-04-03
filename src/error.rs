@@ -13,7 +13,8 @@ pub enum Severity
 pub enum Kind
 {
     FileNotFound(String),
-    UnterminedString,
+    UnterminatedComment,
+    UnterminatedString,
     UnknownChar(char),
 
     UnexpectedToken(Token),
@@ -108,7 +109,7 @@ impl NyonError {
         }
 
         if let Some(hint) = &self.hint {
-            println!("  {} {}... {}", "|", "you should".green().bold(), hint.green());
+            println!("  {} {} {}", "|", "You should...".green().bold(), hint.green());
         }
     }
 }
@@ -119,7 +120,8 @@ impl Kind {
         match self {
             Kind::FileNotFound(path) =>
             format!("Unable to open the file at: \"{}\"", path.white().bold()),
-            Kind::UnterminedString => "You should termine a string literal!".to_string(),
+            Kind::UnterminatedString => "You should terminate a string literal!".to_string(),
+            Kind::UnterminatedComment => "How long is this comment?!".to_string(),
             Kind::UnknownChar(c) => format!("Hm? {}?", c.to_string().bright_blue().bold()),
             
             Kind::UnexpectedToken(token) => format!("{:#?}\n^ I found this token! Are you sure it's the right one?", token),
@@ -128,7 +130,7 @@ impl Kind {
             Kind::ExpectedIdentifier => "There's something missing here, but... What? Oh, an identifier!".to_string(),
             Kind::ExpectedType => "Ok, a null-type identifier! Right? Right?!".to_string(),
             Kind::ExpectedFunctionName => "A nice function needs a nice name!".to_string(),
-            Kind::ExpectedReturnType => format!("Well... You maybe want \"{}\" as a type of your nice function?\nNot after putting that ':'!", "none".bright_blue().bold()),
+            Kind::ExpectedReturnType => format!("Well... You maybe want \"{}\" as a type?\nNot after putting that ':'!", "none".bright_blue().bold()),
             Kind::ExpectedValue => "Go, go! Tell me more! Equals to...?".to_string(),
             Kind::UnsupportedStatement => "Mhmhmh! Not here, not now...".to_string(),
 

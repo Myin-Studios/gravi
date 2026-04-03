@@ -90,16 +90,18 @@ pub enum TokenKind
 pub struct Token
 {
     kind: TokenKind,
+    file: String,
     line: usize,
     column: usize,
 }
 
 impl Token {
-    pub fn new(kind: TokenKind, line: usize, column: usize) -> Self
+    pub fn new(kind: TokenKind, file: &String, line: usize, column: usize) -> Self
     {
         Self
         {
             kind,
+            file: file.to_string(),
             line,
             column
         }
@@ -108,6 +110,21 @@ impl Token {
     pub fn kind(&self) -> &TokenKind
     {
         &self.kind
+    }
+
+    pub fn file(&self) -> &String
+    {
+        &self.file
+    }
+
+    pub fn line(&self) -> usize
+    {
+        self.line
+    }
+
+    pub fn column(&self) -> usize
+    {
+        self.column
     }
 }
 
@@ -125,7 +142,7 @@ pub struct Lexer
 impl Lexer {
     pub fn new(path: &str) -> Self
     {
-        let mut readed_file = File::open(path);
+        let readed_file = File::open(path);
 
         match readed_file {
             Ok(mut f) => {
@@ -163,7 +180,7 @@ impl Lexer {
                     tokens: Vec::new(),
 
                     file: std::path::Path::new(path).file_name().unwrap_or_default().to_str().unwrap_or_default().to_string(),
-                    rep: Reporter::new(),
+                    rep,
                 }
             },
         }
@@ -222,6 +239,17 @@ impl Lexer {
                             break;
                         }
                     }
+                    else if self.next() == '\0'
+                    {
+                        self.rep.add(NyonError::throw(crate::error::Kind::UnterminatedComment)
+                                                .file(&self.file)
+                                                .at(self.line, self.column)
+                                                .hint(format!("Try writing {} to end your monologue.", "*/".bright_blue().bold()).as_str()));
+
+                        let _ = self.advance();
+                        
+                        break;
+                    }
                 }
             }
             else {
@@ -244,6 +272,16 @@ impl Lexer {
             if self.next() != '"' && self.next() != '\0'
             {
                 word.push(self.advance());
+            }
+            else if self.next() == '\0' {
+                self.rep.add(NyonError::throw(crate::error::Kind::UnterminatedString)
+                                                .file(&self.file)
+                                                .at(self.line, self.column)
+                                                .hint(format!("Try writing {} to end your monologue.", "\"".bright_blue().bold()).as_str()));
+                
+                let _ = self.advance();
+                
+                break;
             }
             else {
                 break;
@@ -292,61 +330,61 @@ impl Lexer {
     fn what(&self, word: &str) -> Token
     {
         match word {
-            "pub" => Token::new(TokenKind::Keyword(Keyword::Pub), self.line, self.column - word.len()),
-            "var" => Token::new(TokenKind::Keyword(Keyword::Var), self.line, self.column - word.len()),
-            "mut" => Token::new(TokenKind::Keyword(Keyword::Mut), self.line, self.column - word.len()),
-            "if" => Token::new(TokenKind::Keyword(Keyword::If), self.line, self.column - word.len()),
-            "else" => Token::new(TokenKind::Keyword(Keyword::Else), self.line, self.column - word.len()),
-            "for" => Token::new(TokenKind::Keyword(Keyword::For), self.line, self.column - word.len()),
-            "while" => Token::new(TokenKind::Keyword(Keyword::While), self.line, self.column - word.len()),
-            "!GPU" => Token::new(TokenKind::Keyword(Keyword::GPU), self.line, self.column - word.len()),
-            "!PAR" => Token::new(TokenKind::Keyword(Keyword::PAR), self.line, self.column - word.len()),
-            "fun" => Token::new(TokenKind::Keyword(Keyword::Fun), self.line, self.column - word.len()),
-            "class" => Token::new(TokenKind::Keyword(Keyword::Class), self.line, self.column - word.len()),
-            "type" => Token::new(TokenKind::Keyword(Keyword::Type), self.line, self.column - word.len()),
-            "ext" => Token::new(TokenKind::Keyword(Keyword::Ext), self.line, self.column - word.len()),
-            "ret" => Token::new(TokenKind::Keyword(Keyword::Ret), self.line, self.column - word.len()),
+            "pub" => Token::new(TokenKind::Keyword(Keyword::Pub), &self.file, self.line, self.column - word.len()),
+            "var" => Token::new(TokenKind::Keyword(Keyword::Var), &self.file, self.line, self.column - word.len()),
+            "mut" => Token::new(TokenKind::Keyword(Keyword::Mut), &self.file, self.line, self.column - word.len()),
+            "if" => Token::new(TokenKind::Keyword(Keyword::If), &self.file, self.line, self.column - word.len()),
+            "else" => Token::new(TokenKind::Keyword(Keyword::Else), &self.file, self.line, self.column - word.len()),
+            "for" => Token::new(TokenKind::Keyword(Keyword::For), &self.file, self.line, self.column - word.len()),
+            "while" => Token::new(TokenKind::Keyword(Keyword::While), &self.file, self.line, self.column - word.len()),
+            "!GPU" => Token::new(TokenKind::Keyword(Keyword::GPU), &self.file, self.line, self.column - word.len()),
+            "!PAR" => Token::new(TokenKind::Keyword(Keyword::PAR), &self.file, self.line, self.column - word.len()),
+            "fun" => Token::new(TokenKind::Keyword(Keyword::Fun), &self.file, self.line, self.column - word.len()),
+            "class" => Token::new(TokenKind::Keyword(Keyword::Class), &self.file, self.line, self.column - word.len()),
+            "type" => Token::new(TokenKind::Keyword(Keyword::Type), &self.file, self.line, self.column - word.len()),
+            "ext" => Token::new(TokenKind::Keyword(Keyword::Ext), &self.file, self.line, self.column - word.len()),
+            "ret" => Token::new(TokenKind::Keyword(Keyword::Ret), &self.file, self.line, self.column - word.len()),
 
             // Types
-            "u8"  => Token::new(TokenKind::Type(Type::Numeric(Numeric::U8)), self.line, self.column - word.len()),
-            "u16" => Token::new(TokenKind::Type(Type::Numeric(Numeric::U16)), self.line, self.column - word.len()),
-            "u32" => Token::new(TokenKind::Type(Type::Numeric(Numeric::U32)), self.line, self.column - word.len()),
-            "u64" => Token::new(TokenKind::Type(Type::Numeric(Numeric::U64)), self.line, self.column - word.len()),
-            "i8"  => Token::new(TokenKind::Type(Type::Numeric(Numeric::I8)), self.line, self.column - word.len()),
-            "i16" => Token::new(TokenKind::Type(Type::Numeric(Numeric::I16)), self.line, self.column - word.len()),
-            "i32" => Token::new(TokenKind::Type(Type::Numeric(Numeric::I32)), self.line, self.column - word.len()),
-            "i64" => Token::new(TokenKind::Type(Type::Numeric(Numeric::I64)), self.line, self.column - word.len()),
-            "f16" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F16)), self.line, self.column - word.len()),
-            "f32" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F32)), self.line, self.column - word.len()),
-            "f64" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F64)), self.line, self.column - word.len()),
-            "bool" => Token::new(TokenKind::Type(Type::Boolean), self.line, self.column - word.len()),
-            "char" => Token::new(TokenKind::Type(Type::Character), self.line, self.column - word.len()),
-            "string" => Token::new(TokenKind::Type(Type::StringLiteral), self.line, self.column - word.len()),
+            "u8"  => Token::new(TokenKind::Type(Type::Numeric(Numeric::U8)), &self.file, self.line, self.column - word.len()),
+            "u16" => Token::new(TokenKind::Type(Type::Numeric(Numeric::U16)), &self.file, self.line, self.column - word.len()),
+            "u32" => Token::new(TokenKind::Type(Type::Numeric(Numeric::U32)), &self.file, self.line, self.column - word.len()),
+            "u64" => Token::new(TokenKind::Type(Type::Numeric(Numeric::U64)), &self.file, self.line, self.column - word.len()),
+            "i8"  => Token::new(TokenKind::Type(Type::Numeric(Numeric::I8)), &self.file, self.line, self.column - word.len()),
+            "i16" => Token::new(TokenKind::Type(Type::Numeric(Numeric::I16)), &self.file, self.line, self.column - word.len()),
+            "i32" => Token::new(TokenKind::Type(Type::Numeric(Numeric::I32)), &self.file, self.line, self.column - word.len()),
+            "i64" => Token::new(TokenKind::Type(Type::Numeric(Numeric::I64)), &self.file, self.line, self.column - word.len()),
+            "f16" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F16)), &self.file, self.line, self.column - word.len()),
+            "f32" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F32)), &self.file, self.line, self.column - word.len()),
+            "f64" => Token::new(TokenKind::Type(Type::Numeric(Numeric::F64)), &self.file, self.line, self.column - word.len()),
+            "bool" => Token::new(TokenKind::Type(Type::Boolean), &self.file, self.line, self.column - word.len()),
+            "char" => Token::new(TokenKind::Type(Type::Character), &self.file, self.line, self.column - word.len()),
+            "string" => Token::new(TokenKind::Type(Type::StringLiteral), &self.file, self.line, self.column - word.len()),
             
             // Punctuation
-            "." => Token::new(TokenKind::Punctuation(Punctuation::Dot), self.line, self.column - word.len()),
-            ".." => Token::new(TokenKind::Punctuation(Punctuation::Spread), self.line, self.column - word.len()),
-            ":" => Token::new(TokenKind::Punctuation(Punctuation::Colon), self.line, self.column - word.len()),
-            "::" => Token::new(TokenKind::Punctuation(Punctuation::RangeInclusive), self.line, self.column - word.len()),
-            "," => Token::new(TokenKind::Punctuation(Punctuation::Comma), self.line, self.column - word.len()),
-            ";" => Token::new(TokenKind::Punctuation(Punctuation::SemiColon), self.line, self.column - word.len()),
-            "=" => Token::new(TokenKind::Punctuation(Punctuation::Assignment), self.line, self.column - word.len()),
-            "'" => Token::new(TokenKind::Punctuation(Punctuation::SingleQuote), self.line, self.column - word.len()),
-            "\"" => Token::new(TokenKind::Punctuation(Punctuation::Quote), self.line, self.column - word.len()),
-            "(" => Token::new(TokenKind::Punctuation(Punctuation::LParen), self.line, self.column - word.len()),
-            ")" => Token::new(TokenKind::Punctuation(Punctuation::RParen), self.line, self.column - word.len()),
-            "[" => Token::new(TokenKind::Punctuation(Punctuation::LBracket), self.line, self.column - word.len()),
-            "]" => Token::new(TokenKind::Punctuation(Punctuation::RBracket), self.line, self.column - word.len()),
-            "{" => Token::new(TokenKind::Punctuation(Punctuation::LBrace), self.line, self.column - word.len()),
-            "}" => Token::new(TokenKind::Punctuation(Punctuation::RBrace), self.line, self.column - word.len()),
+            "." => Token::new(TokenKind::Punctuation(Punctuation::Dot), &self.file, self.line, self.column - word.len()),
+            ".." => Token::new(TokenKind::Punctuation(Punctuation::Spread), &self.file, self.line, self.column - word.len()),
+            ":" => Token::new(TokenKind::Punctuation(Punctuation::Colon), &self.file, self.line, self.column - word.len()),
+            "::" => Token::new(TokenKind::Punctuation(Punctuation::RangeInclusive), &self.file, self.line, self.column - word.len()),
+            "," => Token::new(TokenKind::Punctuation(Punctuation::Comma), &self.file, self.line, self.column - word.len()),
+            ";" => Token::new(TokenKind::Punctuation(Punctuation::SemiColon), &self.file, self.line, self.column - word.len()),
+            "=" => Token::new(TokenKind::Punctuation(Punctuation::Assignment), &self.file, self.line, self.column - word.len()),
+            "'" => Token::new(TokenKind::Punctuation(Punctuation::SingleQuote), &self.file, self.line, self.column - word.len()),
+            "\"" => Token::new(TokenKind::Punctuation(Punctuation::Quote), &self.file, self.line, self.column - word.len()),
+            "(" => Token::new(TokenKind::Punctuation(Punctuation::LParen), &self.file, self.line, self.column - word.len()),
+            ")" => Token::new(TokenKind::Punctuation(Punctuation::RParen), &self.file, self.line, self.column - word.len()),
+            "[" => Token::new(TokenKind::Punctuation(Punctuation::LBracket), &self.file, self.line, self.column - word.len()),
+            "]" => Token::new(TokenKind::Punctuation(Punctuation::RBracket), &self.file, self.line, self.column - word.len()),
+            "{" => Token::new(TokenKind::Punctuation(Punctuation::LBrace), &self.file, self.line, self.column - word.len()),
+            "}" => Token::new(TokenKind::Punctuation(Punctuation::RBrace), &self.file, self.line, self.column - word.len()),
 
             // Operator
-            "+" => Token::new(TokenKind::Operator(Operator::Add), self.line, self.column - word.len()),
-            "-" => Token::new(TokenKind::Operator(Operator::Sub), self.line, self.column - word.len()),
-            "*" => Token::new(TokenKind::Operator(Operator::Mul), self.line, self.column - word.len()),
-            "/" => Token::new(TokenKind::Operator(Operator::Div), self.line, self.column - word.len()),
+            "+" => Token::new(TokenKind::Operator(Operator::Add), &self.file, self.line, self.column - word.len()),
+            "-" => Token::new(TokenKind::Operator(Operator::Sub), &self.file, self.line, self.column - word.len()),
+            "*" => Token::new(TokenKind::Operator(Operator::Mul), &self.file, self.line, self.column - word.len()),
+            "/" => Token::new(TokenKind::Operator(Operator::Div), &self.file, self.line, self.column - word.len()),
 
-            _ => Token::new(TokenKind::Identifier(word.to_string()), self.line, self.column - word.len())
+            _ => Token::new(TokenKind::Identifier(word.to_string()), &self.file, self.line, self.column - word.len())
         }
     }
 
@@ -393,7 +431,7 @@ impl Lexer {
                 self.advance();
 
                 self.tokens.push(Token::new(
-                    TokenKind::Punctuation(Punctuation::Quote), self.line, self.column - 1
+                    TokenKind::Punctuation(Punctuation::Quote), &self.file, self.line, self.column - 1
                 ));
 
                 if self.next() != '"'
@@ -401,13 +439,13 @@ impl Lexer {
                     let s = self.read_string_literal();
 
                     self.tokens.push(Token::new(
-                        TokenKind::Value(s.clone()), self.line, self.column - s.len()
+                        TokenKind::Value(s.clone()), &self.file, self.line, self.column - s.len()
                     ));
                 }
                 
                 if self.next() == '\0'
                 {
-                    self.rep.add(NyonError::throw(crate::error::Kind::UnterminedString)
+                    self.rep.add(NyonError::throw(crate::error::Kind::UnterminatedString)
                                         .file(&self.file)
                                         .at(self.line, self.column)
                                         .hint(format!("Close with '{}'", "\"".bright_blue().bold()).as_str()));
@@ -418,11 +456,11 @@ impl Lexer {
                     self.advance();
 
                     self.tokens.push(Token::new(
-                        TokenKind::Punctuation(Punctuation::Quote), self.line, self.column - 1
+                        TokenKind::Punctuation(Punctuation::Quote), &self.file, self.line, self.column - 1
                     ));
                 }
             },
-            '#' | '@' | '$' => {
+            '#' | '@' | '$' | '_' => {
                 self.rep.add(NyonError::throw(crate::error::Kind::UnknownChar(self.next()))
                                         .file(&self.file)
                                         .at(self.line, self.column)
@@ -438,7 +476,7 @@ impl Lexer {
         if let Some(c) = word.chars().next()
         {
             if c.is_ascii_digit() {
-                self.tokens.push(Token::new(TokenKind::Value(word.clone()), self.line, self.column - word.len()));
+                self.tokens.push(Token::new(TokenKind::Value(word.clone()), &self.file, self.line, self.column - word.len()));
                 return true
             }
         }
@@ -476,8 +514,6 @@ impl Lexer {
                 break;
             }
         }
-
-        println!("\n{:#?}", self.tokens);
     }
 
     pub fn tokens(&self) -> &Vec<Token>

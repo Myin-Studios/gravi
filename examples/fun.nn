@@ -13,7 +13,7 @@ fun div(a: f32, b: f32): f32
 // no params function
 fun no_params() { // "none" return type
     var localVar: string = "Hellowww!";; // added multiple ';' to check the parser
-    ;
+    ; // testing singular ';' to check parser errors
     var booooool: bool = false;
 }
 
@@ -28,12 +28,16 @@ fun main()
 {
     // div(1, 2); // Items::Call(Expr::Literal(1), Expr::Literal(2))
     
+    !PAR var array: f32 = 0.0:3.0::12.0;
+
     // First debug function:
     show(div(1, div(div(8, 2), 2))); // Items::Call(Expr::Literal(1), Value::Call(Value::Call(8, 2), Expr::Literal(2)))
     show("Woohooo!");
     show(true);
-    show(return_string("String from function!"));
+    show(return_string("String from function!")); // this prints numbers, future fix: check the function return type
 
     // FUTURE!
     // div(1, || => { ret 4 - 2 }); // Calling Items::Call(Expr::Literal(1), Items::Fun()) where Fun() is a Items::Fun with "lambda" = true
 }
+
+/* unclosed comment (this should throw an error...) */

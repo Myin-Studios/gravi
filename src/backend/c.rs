@@ -136,7 +136,7 @@ impl CGenerator {
             Value::Null => {
 
             },
-            Value::Call(id, values) => {},
+            Value::Call(_, _) => {},
         }
 
         res
@@ -272,7 +272,7 @@ impl CGenerator {
     {
         let mut res: String = String::from("\tprintf(");
 
-        for (i, val) in vals.into_iter().enumerate()
+        for val in vals
         {
             match val {
                 Value::Expression(expr) => res.push_str(format!("\"%g\\n\", {}", self.gen_expr(expr)).as_str()),
@@ -304,7 +304,7 @@ impl CGenerator {
             Value::Expression(expr) => self.gen_expr(expr),
             Value::StringLiteral(str) => str.to_string(),
             Value::Boolean(b) => b.to_string(),
-            Value::Call(id, vals) => "".to_string(),
+            Value::Call(_, _) => "".to_string(),
             Value::Null => "".to_string(),
         }).as_str());
 
@@ -335,7 +335,7 @@ impl Backend for CGenerator {
                     self.out.push_str(s.as_str());
                 },
                 crate::parser::Items::Ret(_) => {}, // ignored because "ret" can't be in a global context
-                crate::parser::Items::Call(id, vals) => {},
+                crate::parser::Items::Call(_, _) => {},
                 crate::parser::Items::None => {} // error! invalid statement, function, class or variable declaration!
             }
         }

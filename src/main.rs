@@ -69,6 +69,8 @@ fn build(input: String, filename: &String, ty: BackendType, target: Target, flag
 
     let mut p = parser::Parser::new();
     p.process(l.tokens_mut());
+    p.reporter().fire_all();
+    if p.reporter().has_errors() { std::process::exit(1); }
 
     let cg = match ty {
         BackendType::ZIG | BackendType::GCC | BackendType::LLVM /* to be moved in another branch!*/ => {

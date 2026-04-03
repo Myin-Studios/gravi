@@ -58,7 +58,7 @@ impl CGenerator {
 
         let ty = self.get_type(var.ty());
         
-        let mutable = if *var.mutable()
+        let mutable = if var.mutable()
         {
             ""
         }
@@ -177,20 +177,20 @@ impl CGenerator {
     {
         let mut res: String = String::new();
 
-        let ret = if *fun.main() { "int".to_string() } else { self.get_type(fun.ret()) };
+        let ret = if fun.main() { "int".to_string() } else { self.get_type(fun.ret()) };
         let id = if fun.identifier() == "main" { "main".to_string() } else {
             let mut i = String::from("nn_");
-            i.push_str(fun.identifier().as_str());
+            i.push_str(fun.identifier());
             i
         };
         
         let mut params: String = String::new();
 
-        if !*fun.main()
+        if !fun.main()
         {
             for i in 0..fun.params().len()
             {
-                let m = if *fun.params()[i].mutable() { "" } else { "const " };
+                let m = if fun.params()[i].mutable() { "" } else { "const " };
                 let t = self.get_type(&fun.params()[i].ty());
                 let id = fun.params()[i].identifier();
                 let v = fun.params()[i].value();
@@ -329,7 +329,7 @@ impl Backend for CGenerator {
                     temp.push_str(self.gen_var(var).as_str());
                 },
                 crate::parser::Items::Fun(fun) => {
-                    is_main = *fun.main();
+                    is_main = fun.main();
 
                     let s = self.gen_fun(fun);
                     self.out.push_str(s.as_str());

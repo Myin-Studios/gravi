@@ -54,12 +54,12 @@ impl VarDecl {
         &self.par
     }
 
-    pub fn mutable(&self) -> &bool
+    pub fn mutable(&self) -> bool
     {
-        &self.mutable
+        self.mutable
     }
 
-    pub fn identifier(&self) -> &String
+    pub fn identifier(&self) -> &str
     {
         &self.id
     }
@@ -199,17 +199,17 @@ impl Function {
         }
     }
 
-    pub fn lambda(&self) -> &bool
+    pub fn lambda(&self) -> bool
     {
-        &self.lambda
+        self.lambda
     }
 
-    pub fn main(&self) -> &bool
+    pub fn main(&self) -> bool
     {
-        &self.main
+        self.main
     }
     
-    pub fn identifier(&self) -> &String
+    pub fn identifier(&self) -> &str
     {
         &self.id
     }
@@ -279,47 +279,9 @@ impl Parser {
     {
         tokens.reverse();
 
-        let mut mutable: bool = false;
-        let mut par: Parallelism = Parallelism::None;
-
-        loop {
-            if tokens.is_empty()
-            {
-                break;
-            }
-
-            if let Some(t) = tokens.pop()
-            {
-                match t.kind() {
-                    TokenKind::Keyword(kw) => 
-                    {
-                        match kw {
-                            Keyword::GPU => {
-                                par = Parallelism::GPU;
-                            },
-                            Keyword::PAR => {
-                                par = Parallelism::CPU
-                            },
-                            Keyword::Mut => {
-                                mutable = true;
-                            },
-                            Keyword::Var => {
-                                let var = Items::Var(self.parse_var_decl(&par, mutable, tokens));
-                                self.prog.add(var);
-
-                                par = Parallelism::None;
-                                mutable = false;
-                            },
-                            Keyword::Fun => {
-                                let fun = self.parse_function(tokens);
-                                self.prog.add(fun);
-                            }
-                            _ => {}
-                        }
-                    },
-                    _ => {}
-                }
-            }
+        let items = self.parse_block(tokens, true);
+        for item in items {
+            self.prog.add(item);
         }
     }
 
@@ -427,15 +389,16 @@ impl Parser {
                         }
                     },
                     TokenKind::Punctuation(Punctuation::LParen) => {
-                        val = Value::Expression(self.parse_expr(tokens));                        
+                        val = Value::Expression(self.parse_expr(tokens));
+                        break;
                     }
                     TokenKind::Identifier(v) | TokenKind::Value(v) => { // true/false or some identifier
-                        val = if v == &"true".to_string()
+                        val = if v == "true"
                         {
                             tokens.pop();
                             Value::Boolean("true".to_string())
                         }
-                        else if v == &"false".to_string() {
+                        else if v == "false" {
                             tokens.pop();
                             Value::Boolean("false".to_string())
                         }
@@ -480,6 +443,55 @@ impl Parser {
         val
     }
 
+    fn parse_range(&mut self, start: Expr, default_inclusive: bool, tokens: &mut Vec<Token>) -> Expr
+    {
+        let _ = tokens.pop();
+        let sec = self.parse_term(tokens);
+
+        if let Some(tk) = tokens.last()
+        {
+            match tk.kind() {
+                TokenKind::Punctuation(Punctuation::Colon) => {
+                    let _ = tokens.pop();
+                    let thi = self.parse_term(tokens);
+
+                    Expr::Range(Range {
+                        start: Box::new(start),
+                        step: Some(Box::new(sec)),
+                        end: Box::new(thi),
+                        inclusive: false,
+                    })
+                },
+                TokenKind::Punctuation(Punctuation::RangeInclusive) => {
+                    let _ = tokens.pop();
+                    let thi = self.parse_term(tokens);
+
+                    Expr::Range(Range {
+                        start: Box::new(start),
+                        step: Some(Box::new(sec)),
+                        end: Box::new(thi),
+                        inclusive: true,
+                    })
+                },
+                _ => {
+                    Expr::Range(Range {
+                        start: Box::new(start),
+                        step: None,
+                        end: Box::new(sec),
+                        inclusive: default_inclusive,
+                    })
+                }
+            }
+        } else {
+            Expr::Range(Range {
+                start: Box::new(start),
+                step: None,
+                end: Box::new(sec),
+                inclusive: default_inclusive,
+            })
+        }
+    }
+
     fn parse_expr(&mut self, tokens: &mut Vec<Token>) -> Expr
     {
         let mut l = self.parse_term(tokens);
@@ -509,145 +521,9 @@ impl Parser {
                     },
                     TokenKind::Punctuation(p) => {
                         match p {
-                            Punctuation::Colon => {
-
-                                let _ = tokens.pop();
-                                
-                                let sec = self.parse_term(tokens);
-
-                                if let Some(tk) = tokens.last()
-                                {
-                                    match tk.kind() {
-                                        TokenKind::Punctuation(p) => {
-                                            match p {
-                                                Punctuation::Colon => {
-
-                                                    let _ = tokens.pop();
-
-                                                    let thi = self.parse_term(tokens);
-
-                                                    l = Expr::Range(
-                                                        Range
-                                                        {
-                                                            start: Box::new(l),
-                                                            step: Some(Box::new(sec)),
-                                                            end: Box::new(thi),
-                                                            inclusive: false
-                                                        }
-                                                    )
-                                                },
-                                                Punctuation::RangeInclusive => {
-                                                    
-                                                    let _ = tokens.pop();
-
-                                                    let thi = self.parse_term(tokens);
-
-                                                    l = Expr::Range(
-                                                        Range
-                                                        {
-                                                            start: Box::new(l),
-                                                            step: Some(Box::new(sec)),
-                                                            end: Box::new(thi),
-                                                            inclusive: true
-                                                        }
-                                                    )
-                                                },
-                                                _ => {
-                                                    l = Expr::Range(
-                                                        Range
-                                                        {
-                                                            start: Box::new(l),
-                                                            step: None,
-                                                            end: Box::new(sec),
-                                                            inclusive: true
-                                                        }
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        _ => {
-                                            l = Expr::Range(
-                                                Range
-                                                {
-                                                    start: Box::new(l),
-                                                    step: None,
-                                                    end: Box::new(sec),
-                                                    inclusive: false
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-                            },
-                            Punctuation::RangeInclusive => {
-                                
-                                let _ = tokens.pop();
-                                
-                                let sec = self.parse_term(tokens);
-
-                                if let Some(tk) = tokens.last()
-                                {
-                                    match tk.kind() {
-                                        TokenKind::Punctuation(p) => {
-                                            match p {
-                                                Punctuation::Colon => {
-
-                                                    let _ = tokens.pop();
-                                                    
-                                                    let thi = self.parse_term(tokens);
-
-                                                    l = Expr::Range(
-                                                        Range
-                                                        {
-                                                            start: Box::new(l),
-                                                            step: Some(Box::new(sec)),
-                                                            end: Box::new(thi),
-                                                            inclusive: false
-                                                        }
-                                                    )
-                                                },
-                                                Punctuation::RangeInclusive => {
-
-                                                    let _ = tokens.pop();
-                                                    
-                                                    let thi = self.parse_term(tokens);
-
-                                                    l = Expr::Range(
-                                                        Range
-                                                        {
-                                                            start: Box::new(l),
-                                                            step: Some(Box::new(sec)),
-                                                            end: Box::new(thi),
-                                                            inclusive: true
-                                                        }
-                                                    )
-                                                },
-                                                _ => {
-                                                    l = Expr::Range(
-                                                        Range
-                                                        {
-                                                            start: Box::new(l),
-                                                            step: None,
-                                                            end: Box::new(sec),
-                                                            inclusive: true
-                                                        }
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        _ => {
-                                            l = Expr::Range(
-                                                Range
-                                                {
-                                                    start: Box::new(l),
-                                                    step: None,
-                                                    end: Box::new(sec),
-                                                    inclusive: true
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
+                            Punctuation::Colon | Punctuation::RangeInclusive => {
+                                let default_inclusive = *p == Punctuation::RangeInclusive;
+                                return self.parse_range(l, default_inclusive, tokens);
                             },
                             Punctuation::RParen => return l,
                             _ => {
@@ -657,6 +533,8 @@ impl Parser {
                     }
                     _ => return l
                 }
+            } else {
+                return l;
             }
         }
     }
@@ -690,6 +568,8 @@ impl Parser {
                     }
                     _ => return l
                 }
+            } else {
+                return l;
             }
         }
     }
@@ -703,7 +583,23 @@ impl Parser {
                 TokenKind::Value(val) => Expr::Literal(val.to_string()),
                 TokenKind::Punctuation(Punctuation::LParen) => {
                     let inner = self.parse_expr(tokens);
-                    let _ = tokens.pop();
+
+                    if let Some(closing) = tokens.last() {
+                        if closing.kind() == &TokenKind::Punctuation(Punctuation::RParen) {
+                            tokens.pop();
+                        } else {
+                            self.rep.add(NyonError::throw(crate::error::Kind::UnclosedParenthesis)
+                                .file(t.file())
+                                .at(t.line(), t.column())
+                                .hint(format!("Try writing {} to close the grouped expression.", ")".bright_blue().bold()).as_str()));
+                        }
+                    } else {
+                        self.rep.add(NyonError::throw(crate::error::Kind::UnclosedParenthesis)
+                            .file(t.file())
+                            .at(t.line(), t.column())
+                            .hint(format!("Try writing {} to close the grouped expression.", ")".bright_blue().bold()).as_str()));
+                    }
+
                     Expr::Grouped(Box::new(inner))
                 }
                 _ => {
@@ -803,7 +699,7 @@ impl Parser {
                     }
                 }
                 else if t.kind() == &TokenKind::Punctuation(Punctuation::LBrace) {
-                    body.extend(self.parse_block(tokens));
+                    body.extend(self.parse_block(tokens, false));
                 }
                 else if t.kind() == &TokenKind::Punctuation(Punctuation::SemiColon)
                     || t.kind() == &TokenKind::Punctuation(Punctuation::RBrace) {
@@ -828,7 +724,7 @@ impl Parser {
         )
     }
 
-    fn parse_block(&mut self, tokens: &mut Vec<Token>) -> Vec<Items>
+    fn parse_block(&mut self, tokens: &mut Vec<Token>, top_level: bool) -> Vec<Items>
     {
         let mut mutable: bool = false;
         let mut par: Parallelism = Parallelism::None;
@@ -843,7 +739,7 @@ impl Parser {
             if let Some(t) = tokens.pop()
             {
                 match t.kind() {
-                    TokenKind::Keyword(kw) => 
+                    TokenKind::Keyword(kw) =>
                     {
                         match kw {
                             Keyword::GPU => {
@@ -860,20 +756,23 @@ impl Parser {
                                 par = Parallelism::None;
                                 mutable = false;
                             },
-                            Keyword::Ret => {
+                            Keyword::Fun if top_level => {
+                                stmts.push(self.parse_function(tokens));
+                            },
+                            Keyword::Ret if !top_level => {
                                 stmts.push(Items::Ret(self.parse_value(tokens)));
-                            }
+                            },
                             _ => {
                                 self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
                                             .file(t.file())
                                             .at(t.line(), t.column())
-                                            .hint(format!("Write a valid statement, like variable declarations, if-else statement, loop...").as_str()));
+                                            .hint("Write a valid statement, like variable declarations, if-else statement, loop..."));
 
                                 break;
-                            } // error! unsupported code inside a code block! (like function declarations, only lambda functions are supported)
+                            }
                         }
                     },
-                    TokenKind::Punctuation(Punctuation::RBrace) => {
+                    TokenKind::Punctuation(Punctuation::RBrace) if !top_level => {
                         tokens.push(t);
                         break;
                     },
@@ -926,6 +825,8 @@ impl Parser {
                 break;
             }
 
+            vals.push(v);
+
             if let Some(next) = tokens.last() {
                 if next.kind() == &TokenKind::Punctuation(Punctuation::Comma) {
                     tokens.pop();
@@ -943,7 +844,6 @@ impl Parser {
 
     pub fn output(&self) -> &Program
     {
-        println!("{:#?}", self.prog);
         &self.prog
     }
 }

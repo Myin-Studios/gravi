@@ -162,10 +162,9 @@ impl Reporter {
     pub fn add(&mut self, msg: NyonError)
     {
         match msg.severity {
-            Severity::Error => self.err.push(msg),
+            Severity::Fatal | Severity::Error => self.err.push(msg),
             Severity::Warning => self.warn.push(msg),
             Severity::Info => self.info.push(msg),
-            _ => {}
         }
     }
 

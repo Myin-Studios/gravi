@@ -112,7 +112,7 @@ impl Token {
         &self.kind
     }
 
-    pub fn file(&self) -> &String
+    pub fn file(&self) -> &str
     {
         &self.file
     }

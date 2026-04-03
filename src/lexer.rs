@@ -1,5 +1,9 @@
 use std::{fs::File, io::Read};
 
+use colored::Colorize;
+
+use crate::error::{NyonError, Reporter};
+
 #[derive(PartialEq, Debug, Clone)]
 pub enum Keyword
 {
@@ -113,28 +117,58 @@ pub struct Lexer
     line: usize,
     column: usize,
     tokens: Vec<Token>,
+
+    file: String,
+    rep: Reporter
 }
 
 impl Lexer {
     pub fn new(path: &str) -> Self
     {
-        let mut f = File::open(path).expect("Unable to open this file!");
-        let mut content = String::new();
-        let _ = f.read_to_string(&mut content);
-        content = content.replace("\r\n", "\n");
+        let mut readed_file = File::open(path);
 
-        let mut chars: Vec<char> = content.chars().collect();
-        chars.reverse();
+        match readed_file {
+            Ok(mut f) => {
+                let mut content = String::new();
+                let _ = f.read_to_string(&mut content);
+                content = content.replace("\r\n", "\n");
 
-        drop(content);
-        
-        Self
-        {
-            chars,
-            line: 1,
-            column: 1,
-            tokens: Vec::new(),
+                let mut chars: Vec<char> = content.chars().collect();
+                chars.reverse();
+
+                drop(content);
+
+                Self
+                {
+                    chars,
+                    line: 1,
+                    column: 1,
+                    tokens: Vec::new(),
+
+                    file: std::path::Path::new(path).file_name().unwrap_or_default().to_str().unwrap_or_default().to_string(),
+                    rep: Reporter::new(),
+                }
+            },
+            Err(_) => {
+                let mut rep = Reporter::new();
+
+                rep.add(NyonError::throw(crate::error::Kind::FileNotFound(path.to_string()))
+                                    .hint("Try opening another file."));
+
+                Self
+                {
+                    chars: Vec::new(),
+                    line: 1,
+                    column: 1,
+                    tokens: Vec::new(),
+
+                    file: std::path::Path::new(path).file_name().unwrap_or_default().to_str().unwrap_or_default().to_string(),
+                    rep: Reporter::new(),
+                }
+            },
         }
+
+        
     }
 
     fn is_special(&mut self)
@@ -207,7 +241,7 @@ impl Lexer {
         let mut word: String = String::new();
 
         loop {
-            if self.next() != '"'
+            if self.next() != '"' && self.next() != '\0'
             {
                 word.push(self.advance());
             }
@@ -371,11 +405,30 @@ impl Lexer {
                     ));
                 }
                 
-                self.advance();
+                if self.next() == '\0'
+                {
+                    self.rep.add(NyonError::throw(crate::error::Kind::UnterminedString)
+                                        .file(&self.file)
+                                        .at(self.line, self.column)
+                                        .hint(format!("Close with '{}'", "\"".bright_blue().bold()).as_str()));
 
-                self.tokens.push(Token::new(
-                    TokenKind::Punctuation(Punctuation::Quote), self.line, self.column - 1
-                ));
+                    self.advance();
+                }
+                else {
+                    self.advance();
+
+                    self.tokens.push(Token::new(
+                        TokenKind::Punctuation(Punctuation::Quote), self.line, self.column - 1
+                    ));
+                }
+            },
+            '#' | '@' | '$' => {
+                self.rep.add(NyonError::throw(crate::error::Kind::UnknownChar(self.next()))
+                                        .file(&self.file)
+                                        .at(self.line, self.column)
+                                        .hint("Try removing it."));
+
+                self.advance();
             }
             _ => {
                 word = self.read_word();
@@ -435,5 +488,10 @@ impl Lexer {
     pub fn tokens_mut(&mut self) -> &mut Vec<Token>
     {
         &mut self.tokens
+    }
+
+    pub fn reporter(&self) -> &Reporter
+    {
+        &self.rep
     }
 }

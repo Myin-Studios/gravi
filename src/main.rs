@@ -6,6 +6,7 @@ pub mod lexer;
 pub mod parser;
 pub mod codegen;
 pub mod backend;
+pub mod error;
 
 use backend::Backend;
 use codegen::{BackendType, BuildFlag, Generators, Target};
@@ -63,6 +64,8 @@ fn build(input: String, filename: &String, ty: BackendType, target: Target, flag
 {
     let mut l = lexer::Lexer::new(input.as_str());
     l.process();
+    l.reporter().fire_all();
+    if l.reporter().has_errors() { std::process::exit(1); }
 
     let mut p = parser::Parser::new();
     p.process(l.tokens_mut());

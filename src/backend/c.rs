@@ -1,8 +1,11 @@
-use crate::{backend::Backend, lexer::{Operator, Type}, parser::{Expr, Function, Items, Parallelism, Program, Value, VarDecl}};
+use colored::Colorize;
+
+use crate::{backend::Backend, error::{NyonError, Reporter}, lexer::{Operator, Type}, parser::{Expr, Function, Items, Parallelism, Program, Value, VarDecl}};
 
 pub struct CGenerator
 {
-    out: String
+    out: String,
+    rep: Reporter,
 }
 
 impl CGenerator {
@@ -10,7 +13,8 @@ impl CGenerator {
     {
         Self
         {
-            out: String::new()
+            out: String::new(),
+            rep: Reporter::new(),
         }
     }
 
@@ -142,7 +146,7 @@ impl CGenerator {
         res
     }
 
-    fn gen_expr(&self, expr: &Expr) -> String
+    fn gen_expr(&mut self, expr: &Expr) -> String
     {
         let mut res: String = String::new();
         
@@ -167,7 +171,10 @@ impl CGenerator {
             Expr::Grouped(e) => {
                 res = format!("({})", self.gen_expr(e));
             }
-            _ => {}
+            _ => {
+                self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedExpression)
+                                        .hint("Try writing a valid expression, like:\n\t- a binary expression: \"val1 op val2\"\n\t- a grouped expression \"(val op val)\"\n\t- a range: \"start:step:end\" (exclusive) or \"start:step::end\" (inclusive)\n\t - an identifier: named variable\n\t - a numeric literal: 1, 2, ... n or 1.x, 2.x, ..., n.x"));
+            }
         };
 
         res
@@ -220,7 +227,10 @@ impl CGenerator {
                     Items::Var(var) => {
                         bd.push_str(self.gen_var(var).as_str());
                     },
-                    Items::Fun(_) => {}, // function declarations are not supported here!
+                    Items::Fun(f) => {
+                        self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
+                                                .hint(format!("Remove that function declaration from there!\n\tI know, '{}' is a very nice name but... Just, try to declare it in a global context instead of a local :)", f.identifier()).as_str()));
+                    }, // function declarations are not supported here!
                     Items::Ret(val) => bd.push_str(self.gen_ret(val).as_str()),
                     Items::Call(id, vals) => {
                         if id == "show"
@@ -310,6 +320,11 @@ impl CGenerator {
 
         res
     }
+    
+    pub fn reporter(&self) -> &Reporter
+    {
+        &self.rep
+    }
 }
 
 impl Backend for CGenerator {
@@ -334,8 +349,14 @@ impl Backend for CGenerator {
                     let s = self.gen_fun(fun);
                     self.out.push_str(s.as_str());
                 },
-                crate::parser::Items::Ret(_) => {}, // ignored because "ret" can't be in a global context
-                crate::parser::Items::Call(_, _) => {},
+                crate::parser::Items::Ret(_) => {
+                    self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
+                                            .hint(format!("Removing that {} from there!", "ret".bright_blue().bold()).as_str()));
+                }, // ignored because "ret" can't be in a global context
+                crate::parser::Items::Call(id, _) => {
+                    self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
+                                            .hint(format!("Removing that call at that nice function called '{}'!\n\tYou know? Function call are not supported in a global context :)", id.bright_blue().bold()).as_str()));
+                },
                 crate::parser::Items::None => {} // error! invalid statement, function, class or variable declaration!
             }
         }

@@ -428,11 +428,19 @@ impl Parser {
                         tokens.pop();
                         break;
                     }
+                    TokenKind::Punctuation(Punctuation::RBrace) | TokenKind::Punctuation(Punctuation::SemiColon) => {
+                        self.rep.add(NyonError::throw(crate::error::Kind::UnclosedParenthesis)
+                                                .file(t.file())
+                                                .at(t.line(), t.column())
+                                                .hint(format!("Try writing {} to close the expression before this token.", ")".bright_blue().bold()).as_str()));
+
+                        break;
+                    }
                     _ => {
                         self.rep.add(NyonError::throw(crate::error::Kind::ExpectedValue)
                                                 .file(t.file())
                                                 .at(t.line(), t.column())
-                                                .hint(format!("Write a valid value here, like a binary expression, an identifier, a literal (string or numeric), a range and so on.").as_str()));
+                                                .hint("Write a valid value here, like a binary expression, an identifier, a literal (string or numeric), a range and so on."));
 
                         break;
                     }
@@ -679,6 +687,24 @@ impl Parser {
                         }
 
                         params.push(self.parse_var_decl(&par, mutable, tokens));
+
+                        if let Some(next) = tokens.last() {
+                            if next.kind() == &TokenKind::Punctuation(Punctuation::RParen) {
+                                tokens.pop();
+                                break;
+                            } else if next.kind() != &TokenKind::Punctuation(Punctuation::Comma)
+                                   && next.kind() != &TokenKind::Keyword(Keyword::Mut)
+                                   && next.kind() != &TokenKind::Keyword(Keyword::PAR)
+                                   && next.kind() != &TokenKind::Keyword(Keyword::GPU)
+                                   && !matches!(next.kind(), TokenKind::Identifier(_))
+                            {
+                                self.rep.add(NyonError::throw(crate::error::Kind::UnclosedParenthesis)
+                                    .file(t.file())
+                                    .at(t.line(), t.column())
+                                    .hint(format!("Try writing {} to close the parameters declaration.", ")".bright_blue().bold()).as_str()));
+                                break;
+                            }
+                        }
                     }
                 }
                 else if t.kind() == &TokenKind::Punctuation(Punctuation::Colon) {
@@ -759,6 +785,12 @@ impl Parser {
                             Keyword::Fun if top_level => {
                                 stmts.push(self.parse_function(tokens));
                             },
+                            Keyword::Fun if !top_level => {
+                                self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
+                                            .file(t.file())
+                                            .at(t.line(), t.column())
+                                            .hint(format!("Write a valid statement, like variable declarations, if-else statement, loop...\n\tYour nice function can't be declared inside a code block: \"{} ... {}\"!", "{".bright_blue().bold(), "}".bright_blue().bold()).as_str()));
+                            },
                             Keyword::Ret if !top_level => {
                                 stmts.push(Items::Ret(self.parse_value(tokens)));
                             },
@@ -766,7 +798,7 @@ impl Parser {
                                 self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
                                             .file(t.file())
                                             .at(t.line(), t.column())
-                                            .hint("Write a valid statement, like variable declarations, if-else statement, loop..."));
+                                            .hint("Write a valid statement, like variable declarations, if-else statement, loop...\n\tNot function/class/interface declaration!"));
 
                                 break;
                             }

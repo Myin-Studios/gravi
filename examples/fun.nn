@@ -36,6 +36,10 @@ fun main()
     show(true);
     show(return_string("String from function!")); // this prints numbers, future fix: check the function return type
 
+    fun nicename();
+
+    show("After invalid function declaration inside a code block");
+
     // FUTURE!
     // div(1, || => { ret 4 - 2 }); // Calling Items::Call(Expr::Literal(1), Items::Fun()) where Fun() is a Items::Fun with "lambda" = true
 }

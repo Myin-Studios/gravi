@@ -1,0 +1,102 @@
+/* ========================================
+   LEXER ERRORS
+   ======================================== */
+
+/* --- UnknownChar ---
+#invalid
+@invalid
+$invalid
+_invalid
+*/
+
+/* --- UnterminatedString ---
+var s: string = "hello
+*/
+
+/* --- UnterminatedComment ---
+/* this comment never ends
+*/
+
+/* ========================================
+   PARSER ERRORS
+   ======================================== */
+
+/* --- ExpectedFunctionName ---
+fun 123();
+*/
+
+/* --- ExpectedReturnType (function) ---
+fun bad(): {}
+*/
+
+/* --- ExpectedReturnType (variable) ---
+var x: = 5;
+*/
+
+/* --- UnexpectedToken (in var decl) ---
+fun main() {
+    var 123;
+}
+*/
+
+/* --- UnexpectedToken (in expression) ---
+fun main() {
+    var x: i32 = (;);
+}
+*/
+
+/* --- UnclosedParenthesis (grouped expr) --- NOTE: the error says: "Where's the end of this call? You surely forgot to close the parenthesis!". This is not a call. I can fix this phrase
+fun main() {
+    var x: i32 = (1 + 2;
+}
+*/
+
+/* --- UnclosedParenthesis (function params) ---
+fun broken(a: i32, b: i32 {
+    ret a;
+}
+*/
+
+/* --- UnclosedParenthesis (function call args) ---
+fun main() {
+    show(1, 2
+}
+*/
+
+/* --- ExpectedValue ---
+fun main() {
+    var x: i32 = ;
+}
+*/
+
+/* --- UnsupportedStatement (fun inside block) ---
+fun main() {
+    fun nested();
+}
+*/
+
+/* --- UnsupportedStatement (unknown keyword in block) ---
+fun main() {
+    class Foo;
+}
+*/
+
+/* ========================================
+   CODEGEN (C BACKEND) ERRORS
+   ======================================== */
+
+/* --- UnsupportedStatement (ret in global context) --- NOTE: the error is UnsupportedStatement, but it stops at parsing, so the message is not "You should... Removing that ret from there!", it is the same as parser's UnsupportedStatement.
+ret 42;
+*/
+
+/* --- UnsupportedStatement (call in global context) ---
+show("hello");
+*/
+
+/* --- UnsupportedStatement (fun decl inside fun body, via codegen) --- NOTE: This doesn't throw any error at codegen phase. The message is the same as the test-case "fun nested();"
+fun outer() {
+    fun inner(): i32 {
+        ret 1;
+    }
+}
+*/

@@ -81,6 +81,8 @@ fn build(input: String, filename: &String, ty: BackendType, target: Target, flag
     let output = match cg {
         Generators::C(mut g) => {
             g.process(p.output());
+            g.reporter().fire_all();
+            if g.reporter().has_errors() { std::process::exit(1); }
 
             let _ = std::fs::create_dir("out");
             let mut f = File::create("out/out.c").unwrap();

@@ -225,29 +225,43 @@ impl Lexer {
                 }
             }
             else if self.next() == '*' {
+                let start_line = self.line;
+                let start_col = self.column;
+                let mut nested: usize = 0;
+
                 loop {
-                    self.is_special(); // multiline comments
+                    self.is_special();
 
                     c = self.advance();
 
-                    if c == '*'
+                    if c == '/' && self.next() == '*'
                     {
-                        if self.next() == '/'
-                        {
-                            let _ = self.advance();
-                            
-                            break;
+                        let _ = self.advance();
+                        nested += 1;
+                    }
+                    else if c == '*' && self.next() == '/'
+                    {
+                        let _ = self.advance();
+
+                        if nested > 0 {
+                            for _ in 0..nested {
+                                self.rep.add(NyonError::throw(crate::error::Kind::UnterminatedComment)
+                                    .severity(crate::error::Severity::Warning)
+                                    .file(&self.file)
+                                    .at(start_line, start_col)
+                                    .hint(format!("There are {} unclosed inner {} inside this block comment.", nested, "/*".bright_blue().bold()).as_str()));
+                            }
                         }
+
+                        break;
                     }
                     else if self.next() == '\0'
                     {
                         self.rep.add(NyonError::throw(crate::error::Kind::UnterminatedComment)
                                                 .file(&self.file)
-                                                .at(self.line, self.column)
+                                                .at(start_line, start_col)
                                                 .hint(format!("Try writing {} to end your monologue.", "*/".bright_blue().bold()).as_str()));
 
-                        let _ = self.advance();
-                        
                         break;
                     }
                 }
@@ -269,18 +283,16 @@ impl Lexer {
         let mut word: String = String::new();
 
         loop {
-            if self.next() != '"' && self.next() != '\0'
+            if self.next() != '"' && self.next() != '\n' && self.next() != '\0'
             {
                 word.push(self.advance());
             }
-            else if self.next() == '\0' {
+            else if self.next() == '\n' || self.next() == '\0' {
                 self.rep.add(NyonError::throw(crate::error::Kind::UnterminatedString)
                                                 .file(&self.file)
                                                 .at(self.line, self.column)
                                                 .hint(format!("Try writing {} to end your monologue.", "\"".bright_blue().bold()).as_str()));
-                
-                let _ = self.advance();
-                
+
                 break;
             }
             else {

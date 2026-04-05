@@ -153,8 +153,8 @@ impl CGenerator {
         match expr {
             Expr::Identifier(id) => res = id.to_string(),
             Expr::Literal(val) => res = val.to_string(),
-            Expr::Binary(binary) => {
-                let op = match binary.op()
+            Expr::Binary(b) => {
+                let op = match b.op()
                 {
                     Operator::Add => "+",
                     Operator::Sub => "-",
@@ -163,17 +163,42 @@ impl CGenerator {
                     _ => "" // unsupported operator
                 };
                 
-                let l = self.gen_expr(binary.left());
-                let r = self.gen_expr(binary.right());
+                let l = self.gen_expr(b.left());
+                let r = self.gen_expr(b.right());
 
                 res = format!("{} {} {}", l, op, r);
             },
             Expr::Grouped(e) => {
                 res = format!("({})", self.gen_expr(e));
-            }
+            },
+            Expr::Boolean(b) => {
+                let op = match b.op()
+                {
+                    Operator::LAnd => "&&",
+                    Operator::LOr => "||",
+                    _ => "" // unsupported operator
+                };
+                
+                let l = self.gen_expr(b.left());
+                let r = self.gen_expr(b.right());
+
+                res = format!("{} {} {}", l, op, r);
+            },
+            Expr::Unary(u) => {
+                let op = match u.op()
+                {
+                    Operator::LNot => "!",
+                    Operator::Sub => "-",
+                    _ => "" // unsupported operator
+                };
+                
+                let r = self.gen_expr(u.right());
+
+                res = format!("{}{}", op, r);
+            },
             _ => {
                 self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedExpression)
-                                        .hint("Try writing a valid expression, like:\n\t- a binary expression: \"val1 op val2\"\n\t- a grouped expression \"(val op val)\"\n\t- a range: \"start:step:end\" (exclusive) or \"start:step::end\" (inclusive)\n\t - an identifier: named variable\n\t - a numeric literal: 1, 2, ... n or 1.x, 2.x, ..., n.x"));
+                                        .hint("Try writing a valid expression, like:\n\t- a binary expression: \"val1 op val2\"\n\t- a grouped expression \"(val1 op val2)\"\n\t- a boolean expression: \"a || b\" or \"a && b\"\n\t- a range: \"start:step:end\" (exclusive) or \"start:step::end\" (inclusive)\n\t- an identifier: named variable\n\t- a numeric literal: 1, 2, ... n or 1.x, 2.x, ..., n.x"));
             }
         };
 

@@ -1,0 +1,19 @@
+fun main()
+{
+    var a: bool = true;
+    var b: bool = false;
+    var c: bool = false;
+    var d: bool = true;
+
+    // Boolean
+    mut var b1: bool = (a || b) || (c || d); // composed boolean expression
+    mut var b2: bool = !(a || b) || !c; // composed unary and boolean expression
+    mut var b3: bool = !!!a; // TRIPLE NEGATION
+
+    show(b1);
+    show(b2);
+    show(b3);
+
+    // // Unary
+    // mut var u1: bool = a & b; // bit-wise comparison expression
+}

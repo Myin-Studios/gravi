@@ -72,6 +72,11 @@ pub enum Operator
     Sub,
     Mul,
     Div,
+    LAnd,
+    LOr,
+    LNot,
+    BWOr, // bit-wise
+    BWAnd, // bit-wise
     None
 }
 
@@ -275,7 +280,7 @@ impl Lexer {
     fn is_punctuation(&self, ignore: Option<char>) -> bool {
         let c = self.next();
         if Some(c) == ignore { return false; }
-        matches!(c, '.' | ',' | ':' | ';' | '=' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']' | '{' | '}')
+        matches!(c, '.' | ',' | ':' | ';' | '=' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '&' | '!')
     }
 
     fn read_string_literal(&mut self) -> String
@@ -303,11 +308,11 @@ impl Lexer {
         word
     }
     
-    fn read_word(&mut self) -> String
+    fn read_word_or_lnot(&mut self) -> String
     {
         let mut word: String = String::new();
         
-        if self.next().is_alphabetic() || self.next() == '!'
+        if self.next().is_alphabetic()
         {
             word.push(self.advance());
             
@@ -333,6 +338,31 @@ impl Lexer {
                 else {
                     break;
                 }
+            }
+        }
+        else if self.next() == '!' {
+            let mut temp = String::new();
+            
+            loop {
+                if !self.is_punctuation(None) && !self.next().is_whitespace() && self.next() != '\0'
+                {
+                    temp.push(self.advance());
+                }
+                else {
+                    break;
+                }
+            }
+
+            if matches!(temp.as_str(), "!GPU" | "!PAR")
+            {
+                word.push_str(&temp);
+            }
+            else {
+                self.chars.extend(temp.chars().rev());
+
+                self.column -= temp.len();
+
+                word.push(self.advance());
             }
         }
 
@@ -395,6 +425,11 @@ impl Lexer {
             "-" => Token::new(TokenKind::Operator(Operator::Sub), &self.file, self.line, self.column - word.len()),
             "*" => Token::new(TokenKind::Operator(Operator::Mul), &self.file, self.line, self.column - word.len()),
             "/" => Token::new(TokenKind::Operator(Operator::Div), &self.file, self.line, self.column - word.len()),
+            "!" => Token::new(TokenKind::Operator(Operator::LNot), &self.file, self.line, self.column - word.len()),
+            "||" => Token::new(TokenKind::Operator(Operator::LOr), &self.file, self.line, self.column - word.len()),
+            "&&" => Token::new(TokenKind::Operator(Operator::LAnd), &self.file, self.line, self.column - word.len()),
+            "|" => Token::new(TokenKind::Operator(Operator::BWOr), &self.file, self.line, self.column - word.len()),
+            "&" => Token::new(TokenKind::Operator(Operator::BWAnd), &self.file, self.line, self.column - word.len()),
 
             _ => Token::new(TokenKind::Identifier(word.to_string()), &self.file, self.line, self.column - word.len())
         }
@@ -472,6 +507,30 @@ impl Lexer {
                     ));
                 }
             },
+            '|' => {
+                let c = self.advance();
+                self.column += 1;
+
+                if self.next() == '|'
+                {
+                    word.push_str(format!("{}{}", c, self.advance()).as_str());
+                }
+                else {
+                    word.push(c);
+                }
+            },
+            '&' => {
+                let c = self.advance();
+                self.column += 1;
+
+                if self.next() == '&'
+                {
+                    word.push_str(format!("{}{}", c, self.advance()).as_str());
+                }
+                else {
+                    word.push(c);
+                }
+            },
             '#' | '@' | '$' | '_' => {
                 self.rep.add(NyonError::throw(crate::error::Kind::UnknownChar(self.next()))
                                         .file(&self.file)
@@ -481,7 +540,7 @@ impl Lexer {
                 self.advance();
             }
             _ => {
-                word = self.read_word();
+                word = self.read_word_or_lnot();
             }
         }
 
@@ -526,6 +585,8 @@ impl Lexer {
                 break;
             }
         }
+        
+        println!("{:#?}", self.tokens);
     }
 
     pub fn tokens(&self) -> &Vec<Token>

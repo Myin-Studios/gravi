@@ -121,12 +121,77 @@ impl Binary {
 }
 
 #[derive(Debug, Clone)]
+pub struct Boolean
+{
+    left: Box<Expr>,
+    op: Operator,
+    right: Box<Expr>,
+}
+
+impl Boolean {
+    pub fn new() -> Self
+    {
+        Self
+        {
+            left: Box::new(Expr::Null),
+            op: Operator::None,
+            right: Box::new(Expr::Null),
+        }
+    }
+    
+    pub fn left(&self) -> &Expr
+    {
+        &self.left
+    }
+
+    pub fn op(&self) -> &Operator
+    {
+        &self.op
+    }
+
+    pub fn right(&self) -> &Expr
+    {
+        &self.right
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Unary
+{
+    op: Operator,
+    right: Box<Expr>,
+}
+
+impl Unary {
+    pub fn new() -> Self
+    {
+        Self
+        {
+            op: Operator::None,
+            right: Box::new(Expr::Null),
+        }
+    }
+    
+    pub fn op(&self) -> &Operator
+    {
+        &self.op
+    }
+
+    pub fn right(&self) -> &Expr
+    {
+        &self.right
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Expr
 {
     Literal(String),
     Identifier(String),
     Range(Range),
     Binary(Binary),
+    Boolean(Boolean),
+    Unary(Unary),
     Grouped(Box<Expr>),
     Call(Vec<Value>),
     Null
@@ -370,7 +435,7 @@ impl Parser {
             {
                 match t.kind() {
                     TokenKind::Punctuation(Punctuation::Colon | Punctuation::RangeInclusive) => { // :end or ::end or :step:end or :step::end
-                        val = Value::Expression(self.parse_expr(tokens));
+                        val = Value::Expression(self.parse_binary(tokens, 0));
                         break;
                     },
                     TokenKind::Punctuation(Punctuation::Quote) => { // "some string literal"
@@ -389,9 +454,13 @@ impl Parser {
                         }
                     },
                     TokenKind::Punctuation(Punctuation::LParen) => {
-                        val = Value::Expression(self.parse_expr(tokens));
+                        val = Value::Expression(self.parse_binary(tokens, 0));
                         break;
-                    }
+                    },
+                    TokenKind::Operator(Operator::LNot) => {
+                        val = Value::Expression(self.parse_binary(tokens, 0));
+                        break;
+                    },
                     TokenKind::Identifier(v) | TokenKind::Value(v) => { // true/false or some identifier
                         val = if v == "true"
                         {
@@ -416,7 +485,7 @@ impl Parser {
                                 else {
                                     tokens.push(temp);
                                     
-                                    return Value::Expression(self.parse_expr(tokens))
+                                    return Value::Expression(self.parse_binary(tokens, 0))
                                 };
                             }
 
@@ -500,6 +569,48 @@ impl Parser {
         }
     }
 
+    fn parse_binary(&mut self, tokens: &mut Vec<Token>, lvl: usize) -> Expr
+    {
+        if lvl > 3
+        {
+            return self.parse_expr(tokens);
+        }
+
+        let mut l = self.parse_binary(tokens, lvl + 1);
+
+        loop {
+            if let Some(t) = tokens.last().cloned()
+            {
+                match t.kind() {
+                    TokenKind::Operator(o) => {
+
+                        let (op, _, r) = match lvl {
+                            0 if o == &Operator::LOr => (o.to_owned(), tokens.pop(), self.parse_binary(tokens, lvl + 1)),
+                            1 if o == &Operator::LAnd => (o.to_owned(), tokens.pop(), self.parse_binary(tokens, lvl + 1)),
+                            2 if o == &Operator::BWOr => (o.to_owned(), tokens.pop(), self.parse_binary(tokens, lvl + 1)),
+                            3 if o == &Operator::BWAnd => (o.to_owned(), tokens.pop(), self.parse_binary(tokens, lvl + 1)),
+                            _ => {
+                                return l
+                            }
+                        };
+
+                        l = Expr::Boolean(
+                            Boolean
+                            {
+                                left: Box::new(l),
+                                op,
+                                right: Box::new(r),
+                            }
+                        )
+                    },
+                    _ => return l
+                }
+            } else {
+                return l;
+            }
+        }
+    }
+    
     fn parse_expr(&mut self, tokens: &mut Vec<Token>) -> Expr
     {
         let mut l = self.parse_term(tokens);
@@ -523,7 +634,7 @@ impl Parser {
                                         right: Box::new(r),
                                     }
                                 )
-                            }
+                            },
                             _ => return l
                         }
                     },
@@ -570,7 +681,7 @@ impl Parser {
                                         right: Box::new(r),
                                     }
                                 )
-                            }
+                            },
                             _ => return l
                         }
                     }
@@ -590,7 +701,7 @@ impl Parser {
                 TokenKind::Identifier(id) => Expr::Identifier(id.to_string()),
                 TokenKind::Value(val) => Expr::Literal(val.to_string()),
                 TokenKind::Punctuation(Punctuation::LParen) => {
-                    let inner = self.parse_expr(tokens);
+                    let inner = self.parse_binary(tokens, 0);
 
                     if let Some(closing) = tokens.last() {
                         if closing.kind() == &TokenKind::Punctuation(Punctuation::RParen) {
@@ -609,12 +720,33 @@ impl Parser {
                     }
 
                     Expr::Grouped(Box::new(inner))
-                }
+                },
+                TokenKind::Operator(o) => {
+                    match o {
+                        Operator::LNot => {
+                            Expr::Unary(
+                                Unary
+                                {
+                                    op: Operator::LNot,
+                                    right: Box::new(self.parse_factor(tokens))
+                                }
+                            )
+                        },
+                        _ => {
+                            self.rep.add(NyonError::throw(crate::error::Kind:: UnexpectedToken(t.clone()))
+                                                .file(t.file())
+                                                .at(t.line(), t.column())
+                                                .hint(format!("Try writing a valid expression here, like a binary expression, a boolean expression, an identifier, a literal or a range.").as_str()));
+
+                            Expr::Null
+                        }
+                    }
+                },
                 _ => {
                     self.rep.add(NyonError::throw(crate::error::Kind:: UnexpectedToken(t.clone()))
                                                 .file(t.file())
                                                 .at(t.line(), t.column())
-                                                .hint(format!("Try writing a valid expression here, like a binary expression, an identifier, a literal or a range.").as_str()));
+                                                .hint(format!("Try writing a valid expression here, like a binary expression, a boolean expression, an identifier, a literal or a range.").as_str()));
 
                     Expr::Null
                 }
@@ -876,6 +1008,7 @@ impl Parser {
 
     pub fn output(&self) -> &Program
     {
+        println!("\n{:#?}", self.prog);
         &self.prog
     }
 }

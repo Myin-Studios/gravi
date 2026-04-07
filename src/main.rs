@@ -2,8 +2,10 @@ use std::{fs::File, io::Write, path};
 
 use colored::Colorize;
 
+pub mod ast;
 pub mod lexer;
 pub mod parser;
+pub mod typechecker;
 pub mod codegen;
 pub mod backend;
 pub mod error;
@@ -71,6 +73,9 @@ fn build(input: String, filename: &String, ty: BackendType, target: Target, flag
     p.process(l.tokens_mut());
     p.reporter().fire_all();
     if p.reporter().has_errors() { std::process::exit(1); }
+
+    let mut tc = typechecker::Checker::new();
+    tc.process(p.output());
 
     let cg = match ty {
         BackendType::ZIG | BackendType::GCC | BackendType::LLVM /* to be moved in another branch!*/ => {

@@ -1,6 +1,6 @@
 use colored::Colorize;
 
-use crate::{backend::Backend, error::{NyonError, Reporter}, lexer::{Operator, Type}, parser::{Expr, Function, Items, Parallelism, Program, Value, VarDecl}};
+use crate::{backend::Backend, error::{NyonError, Reporter}, lexer::{Operator, Type}, ast::*};
 
 pub struct CGenerator
 {
@@ -70,20 +70,20 @@ impl CGenerator {
             "const "
         };
 
-        match var.value().as_ref().unwrap_or(&crate::parser::Value::Null) {
+        match var.value().as_ref().unwrap_or(&crate::ast::Value::Null) {
             Value::Expression(e) => {
                 match e {
-                    crate::parser::Expr::Range(range) => {
+                    crate::ast::Expr::Range(range) => {
                         let start = match range.start().as_ref() {
-                            crate::parser::Expr::Literal(val) => val.to_string(),
+                            crate::ast::Expr::Literal(val) => val.to_string(),
                             _ => { String::from("0") }
                         };
                         let step = match range.step().as_ref().unwrap_or(&Box::new(Expr::Literal("1".to_string()))).as_ref() {
-                            crate::parser::Expr::Literal(val) => val.to_string(),
+                            crate::ast::Expr::Literal(val) => val.to_string(),
                             _ => { String::from("1") }
                         };
                         let end = match range.end().as_ref() {
-                            crate::parser::Expr::Literal(val) => val.to_string(),
+                            crate::ast::Expr::Literal(val) => val.to_string(),
                             _ => { String::from("1") }
                         };
                         let incl = match range.inclusive() {
@@ -135,7 +135,15 @@ impl CGenerator {
                 res.push_str(format!("\tconst char* {} = \"{}\";\n", var.identifier(), s).as_str());
             },
             Value::Boolean(b) => {
-                res.push_str(format!("\t{}bool {} = {};\n", mutable, var.identifier(), b).as_str());
+                let bv = if b == &BoolValue::True
+                {
+                    "true"
+                }
+                else {
+                    "false"
+                };
+                
+                res.push_str(format!("\t{}bool {} = {};\n", mutable, var.identifier(), bv).as_str());
             }
             Value::Null => {
 
@@ -252,10 +260,6 @@ impl CGenerator {
                     Items::Var(var) => {
                         bd.push_str(self.gen_var(var).as_str());
                     },
-                    Items::Fun(f) => {
-                        self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
-                                                .hint(format!("Remove that function declaration from there!\n\tI know, '{}' is a very nice name but... Just, try to declare it in a global context instead of a local :)", f.identifier()).as_str()));
-                    }, // function declarations are not supported here!
                     Items::Ret(val) => bd.push_str(self.gen_ret(val).as_str()),
                     Items::Call(id, vals) => {
                         if id == "show"
@@ -266,7 +270,7 @@ impl CGenerator {
                             bd.push_str(format!("\tnn_{}({});\n", id, self.gen_call(vals)).as_str());
                         }
                     },
-                    Items::None => {}, // idk, error?
+                    _ => {}
                 }
             }
             
@@ -289,7 +293,17 @@ impl CGenerator {
             match val {
                 Value::Expression(expr) => res.push_str(self.gen_expr(expr).as_str()),
                 Value::StringLiteral(s) => res.push_str(format!("\"{}\"", s).as_str()),
-                Value::Boolean(b) => res.push_str(b),
+                Value::Boolean(b) => {
+                    res.push_str(
+                        if b == &BoolValue::True
+                        {
+                            "true"
+                        }
+                        else {
+                            "false"
+                        }
+                    );
+                },
                 Value::Call(id, values) => res.push_str(format!("nn_{}({})", id, self.gen_call(values)).as_str()),
                 Value::Null => res.push_str(""),
             }
@@ -313,7 +327,7 @@ impl CGenerator {
                 Value::Expression(expr) => res.push_str(format!("\"%g\\n\", {}", self.gen_expr(expr)).as_str()),
                 Value::StringLiteral(s) => res.push_str(format!("\"%s\\n\", \"{}\"", s).as_str()),
                 Value::Boolean(b) => {
-                    if b == "true"
+                    if b == &BoolValue::True
                     {
                         res.push_str(format!("\"%s\\n\", \"true\"").as_str())
                     }
@@ -338,7 +352,15 @@ impl CGenerator {
         res.push_str(format!("\treturn {};\n", match val {
             Value::Expression(expr) => self.gen_expr(expr),
             Value::StringLiteral(str) => str.to_string(),
-            Value::Boolean(b) => b.to_string(),
+            Value::Boolean(b) => {
+                if b == &BoolValue::True
+                {
+                    "true".to_string()
+                }
+                else {
+                    "false".to_string()
+                }
+            },
             Value::Call(_, _) => "".to_string(),
             Value::Null => "".to_string(),
         }).as_str());
@@ -365,24 +387,12 @@ impl Backend for CGenerator {
         for item in prog.items()
         {
             match item {
-                crate::parser::Items::Var(var) => {
-                    temp.push_str(self.gen_var(var).as_str());
-                },
-                crate::parser::Items::Fun(fun) => {
+                crate::ast::Global::Fun(fun) => {
                     is_main = fun.main();
 
                     let s = self.gen_fun(fun);
                     self.out.push_str(s.as_str());
                 },
-                crate::parser::Items::Ret(_) => {
-                    self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
-                                            .hint(format!("Removing that {} from there!", "ret".bright_blue().bold()).as_str()));
-                }, // ignored because "ret" can't be in a global context
-                crate::parser::Items::Call(id, _) => {
-                    self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
-                                            .hint(format!("Removing that call at that nice function called '{}'!\n\tYou know? Function call are not supported in a global context :)", id.bright_blue().bold()).as_str()));
-                },
-                crate::parser::Items::None => {} // error! invalid statement, function, class or variable declaration!
             }
         }
 

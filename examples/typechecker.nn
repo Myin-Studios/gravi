@@ -1,0 +1,12 @@
+fun outer(a: string): string
+{
+    var b: string = a;
+
+    {
+        var c: string = "";
+        var d: string = "";
+        var e: string = c;
+    }
+
+    ret b;
+}

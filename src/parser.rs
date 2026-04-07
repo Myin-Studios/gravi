@@ -1,299 +1,6 @@
 use colored::Colorize;
 
-use crate::{error::{NyonError, Reporter}, lexer::*};
-
-#[derive(Debug)]
-pub struct Program
-{
-    items: Vec<Items>,
-}
-
-#[derive(Debug)]
-pub enum Items
-{
-    Var(VarDecl),
-    Fun(Function),
-    Ret(Value),
-    Call(String, Vec<Value>),
-    None,
-}
-
-#[derive(PartialEq, Clone, Debug)]
-pub enum Parallelism
-{
-    CPU,
-    GPU,
-    None,
-}
-
-#[derive(Debug)]
-pub struct VarDecl
-{
-    par: Parallelism,
-    mutable: bool,
-    id: String,
-    ty: Type,
-    val: Option<Value>
-}
-
-impl VarDecl {
-    pub fn new() -> Self
-    {
-        Self
-        {
-            par: Parallelism::None,
-            mutable: false,
-            id: "".to_string(),
-            ty: Type::None,
-            val: None
-        }
-    }
-
-    pub fn parallelism(&self) -> &Parallelism
-    {
-        &self.par
-    }
-
-    pub fn mutable(&self) -> bool
-    {
-        self.mutable
-    }
-
-    pub fn identifier(&self) -> &str
-    {
-        &self.id
-    }
-
-    pub fn ty(&self) -> &Type
-    {
-        &self.ty
-    }
-
-    pub fn value(&self) -> &Option<Value>
-    {
-        &self.val
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Value
-{
-    Expression(Expr),
-    StringLiteral(String),
-    Boolean(String),
-    Call(String, Vec<Value>),
-    Null
-}
-
-#[derive(Debug, Clone)]
-pub struct Binary
-{
-    left: Box<Expr>,
-    op: Operator,
-    right: Box<Expr>,
-}
-
-impl Binary {
-    pub fn new() -> Self
-    {
-        Self
-        {
-            left: Box::new(Expr::Null),
-            op: Operator::None,
-            right: Box::new(Expr::Null),
-        }
-    }
-    
-    pub fn left(&self) -> &Expr
-    {
-        &self.left
-    }
-
-    pub fn op(&self) -> &Operator
-    {
-        &self.op
-    }
-
-    pub fn right(&self) -> &Expr
-    {
-        &self.right
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Boolean
-{
-    left: Box<Expr>,
-    op: Operator,
-    right: Box<Expr>,
-}
-
-impl Boolean {
-    pub fn new() -> Self
-    {
-        Self
-        {
-            left: Box::new(Expr::Null),
-            op: Operator::None,
-            right: Box::new(Expr::Null),
-        }
-    }
-    
-    pub fn left(&self) -> &Expr
-    {
-        &self.left
-    }
-
-    pub fn op(&self) -> &Operator
-    {
-        &self.op
-    }
-
-    pub fn right(&self) -> &Expr
-    {
-        &self.right
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Unary
-{
-    op: Operator,
-    right: Box<Expr>,
-}
-
-impl Unary {
-    pub fn new() -> Self
-    {
-        Self
-        {
-            op: Operator::None,
-            right: Box::new(Expr::Null),
-        }
-    }
-    
-    pub fn op(&self) -> &Operator
-    {
-        &self.op
-    }
-
-    pub fn right(&self) -> &Expr
-    {
-        &self.right
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Expr
-{
-    Literal(String),
-    Identifier(String),
-    Range(Range),
-    Binary(Binary),
-    Boolean(Boolean),
-    Unary(Unary),
-    Grouped(Box<Expr>),
-    Call(Vec<Value>),
-    Null
-}
-
-#[derive(Debug, Clone)]
-pub struct Range
-{
-    start: Box<Expr>,
-    step: Option<Box<Expr>>,
-    end: Box<Expr>,
-    inclusive: bool,
-}
-
-impl Range {
-    pub fn new() -> Self
-    {
-        Self
-        {
-            start: Box::new(Expr::Literal("0".to_string())),
-            step: Some(Box::new(Expr::Literal("1".to_string()))),
-            end: Box::new(Expr::Literal("1".to_string())),
-            inclusive: true,
-        }
-    }
-
-    pub fn start(&self) -> &Box<Expr>
-    {
-        &self.start
-    }
-
-    pub fn step(&self) -> &Option<Box<Expr>>
-    {
-        &self.step
-    }
-
-    pub fn end(&self) -> &Box<Expr>
-    {
-        &self.end
-    }
-
-    pub fn inclusive(&self) -> bool
-    {
-        self.inclusive
-    }
-}
-
-#[derive(Debug)]
-pub struct Function
-{
-    lambda: bool,
-    main: bool,
-    id: String,
-    params: Vec<VarDecl>,
-    ret: Type,
-    body: Vec<Items>
-}
-
-impl Function {
-    pub fn new() -> Self
-    {
-        Self
-        {
-            lambda: false,
-            main: false,
-            id: "".to_string(),
-            params: Vec::new(),
-            ret: Type::None,
-            body: Vec::new()
-        }
-    }
-
-    pub fn lambda(&self) -> bool
-    {
-        self.lambda
-    }
-
-    pub fn main(&self) -> bool
-    {
-        self.main
-    }
-    
-    pub fn identifier(&self) -> &str
-    {
-        &self.id
-    }
-
-    pub fn params(&self) -> &Vec<VarDecl>
-    {
-        &self.params
-    }
-
-    pub fn ret(&self) -> &Type
-    {
-        &self.ret
-    }
-
-    pub fn body(&self) -> &Vec<Items>
-    {
-        &self.body
-    }
-}
+use crate::{error::{NyonError, Reporter}, lexer::*, ast::*};
 
 #[derive(PartialEq, Debug)]
 pub enum Expects
@@ -319,12 +26,12 @@ impl Program {
         }
     }
 
-    pub fn add(&mut self, item: Items)
+    pub fn add(&mut self, item: Global)
     {
         self.items.push(item);
     }
 
-    pub fn items(&self) -> &Vec<Items>
+    pub fn items(&self) -> &Vec<Global>
     {
         &self.items
     }
@@ -344,9 +51,21 @@ impl Parser {
     {
         tokens.reverse();
 
-        let items = self.parse_block(tokens, true);
-        for item in items {
-            self.prog.add(item);
+        loop
+        {
+            if let Some(t) = tokens.pop()
+            {
+                match t.kind() {
+                    TokenKind::Keyword(Keyword::Fun) => {
+                        let fun = self.parse_function(tokens);
+                        self.prog.add(fun);
+                    },
+                    _ => {}
+                }
+            }
+            else {
+                break;
+            }
         }
     }
 
@@ -465,11 +184,11 @@ impl Parser {
                         val = if v == "true"
                         {
                             tokens.pop();
-                            Value::Boolean("true".to_string())
+                            Value::Boolean(BoolValue::True)
                         }
                         else if v == "false" {
                             tokens.pop();
-                            Value::Boolean("false".to_string())
+                            Value::Boolean(BoolValue::False)
                         }
                         else {
                             let temp = tokens.pop().unwrap();
@@ -757,7 +476,7 @@ impl Parser {
         }
     }
 
-    fn parse_function(&mut self, tokens: &mut Vec<Token>) -> Items
+    fn parse_function(&mut self, tokens: &mut Vec<Token>) -> Global
     {
         let id = if let Some(t) = tokens.pop()
         {
@@ -869,7 +588,7 @@ impl Parser {
             }
         }
 
-        Items::Fun(
+        Global::Fun(
             Function
             {
                 lambda: false,
@@ -914,9 +633,6 @@ impl Parser {
                                 par = Parallelism::None;
                                 mutable = false;
                             },
-                            Keyword::Fun if top_level => {
-                                stmts.push(self.parse_function(tokens));
-                            },
                             Keyword::Fun if !top_level => {
                                 self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
                                             .file(t.file())
@@ -933,6 +649,15 @@ impl Parser {
                                             .hint("Write a valid statement, like variable declarations, if-else statement, loop...\n\tNot function/class/interface declaration!"));
 
                                 break;
+                            }
+                        }
+                    },
+                    TokenKind::Punctuation(Punctuation::LBrace) => {
+                        stmts.push(Items::Block(self.parse_block(tokens, false)));
+
+                        if let Some(next) = tokens.last() {
+                            if next.kind() == &TokenKind::Punctuation(Punctuation::RBrace) {
+                                tokens.pop();
                             }
                         }
                     },

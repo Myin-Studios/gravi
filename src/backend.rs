@@ -1,4 +1,4 @@
-use crate::parser::Program;
+use crate::ast::Program;
 
 pub mod c;
 

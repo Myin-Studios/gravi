@@ -1,6 +1,6 @@
 use colored::Colorize;
 
-use crate::lexer::Token;
+use crate::lexer::{Token, Type};
 
 pub enum Severity
 {
@@ -26,6 +26,8 @@ pub enum Kind
     ExpectedReturnType,
     ExpectedValue,
     UnsupportedStatement,
+
+    TypeMismatch(Type, Type),
 
     UnsupportedExpression,
     UnsupportedReturnType,
@@ -133,6 +135,8 @@ impl Kind {
             Kind::ExpectedReturnType => format!("Well... You maybe want \"{}\" as a type?\nNot after putting that ':'!", "none".bright_blue().bold()),
             Kind::ExpectedValue => "Go, go! Tell me more! Equals to...?".to_string(),
             Kind::UnsupportedStatement => "Mhmhmh! Not here, not now...".to_string(),
+
+            Kind::TypeMismatch(expected, found) => format!("A-A-A... You mismatched the type! Expected {}, but found {}!", expected.to_string().green().bold(), found.to_string().red().bold()),
 
             Kind::UnsupportedExpression => "Mh... Why would you like to do this? It's not allowed here!".to_string(),
             Kind::UnsupportedReturnType => "Are you kidding me? What's that?! An unsupported return type!".to_string(),

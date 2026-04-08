@@ -20,9 +20,8 @@ pub enum Items
 {
     Var(VarDecl),
     Ret(Value),
-    Call(String, Vec<Value>),
     Lambda(Function),
-    Block(Vec<Items>),
+    Expr(Value),
     None,
 }
 

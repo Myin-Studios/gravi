@@ -36,6 +36,8 @@ fun main()
             }
         }
     }
+
+    var no_matching_var: string = true;
     
     show(some2);
 }

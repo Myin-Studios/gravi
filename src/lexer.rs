@@ -34,6 +34,26 @@ pub enum Numeric
     F16, F32, F64,
 }
 
+impl ToString for Numeric {
+    fn to_string(&self) -> String {
+        let str = match self {
+            Numeric::U8 => "u8",
+            Numeric::U16 => "u16",
+            Numeric::U32 => "u32",
+            Numeric::U64 => "u64",
+            Numeric::I8 => "i8",
+            Numeric::I16 => "i16",
+            Numeric::I32 => "i32",
+            Numeric::I64 => "i64",
+            Numeric::F16 => "f16",
+            Numeric::F32 => "f32",
+            Numeric::F64 => "f64",
+        };
+
+        str.to_string()
+    }
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub enum Type
 {
@@ -43,6 +63,21 @@ pub enum Type
     Character,
     Custom(String),
     None,
+}
+
+impl ToString for Type {
+    fn to_string(&self) -> String {
+        let str = match self {
+            Type::Numeric(numeric) => numeric.to_string(),
+            Type::StringLiteral => "string".to_string(),
+            Type::Boolean => "bool".to_string(),
+            Type::Character => "char".to_string(),
+            Type::Custom(c) => c.to_string(),
+            Type::None => "none".to_string(),
+        };
+
+        str
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]

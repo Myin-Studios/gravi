@@ -662,7 +662,7 @@ impl Parser {
                         }
                     },
                     TokenKind::Punctuation(Punctuation::LBrace) => {
-                        stmts.push(Items::Block(self.parse_block(tokens, false)));
+                        stmts.push(Items::Expr(Value::Block(self.parse_block(tokens, false))));
 
                         if let Some(next) = tokens.last() {
                             if next.kind() == &TokenKind::Punctuation(Punctuation::RBrace) {
@@ -681,7 +681,7 @@ impl Parser {
                             {
                                 let params: Vec<Value> = self.parse_args(tokens);
 
-                                stmts.push(Items::Call(id.to_string(), params));
+                                stmts.push(Items::Expr(Value::Call(id.to_string(), params)));
                             }
                         }
                     }

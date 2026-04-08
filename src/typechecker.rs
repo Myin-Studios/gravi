@@ -1,12 +1,5 @@
 pub use crate::ast::*;
-use crate::lexer::Type;
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct IDInfo
-{
-    id: String,
-    scope: usize
-}
+use crate::{error::{NyonError, Reporter}, lexer::Type};
 
 #[derive(Clone, Debug)]
 pub struct TypeInfo
@@ -36,6 +29,7 @@ impl SymbolInfo {
 pub struct Checker
 {
     stack: Vec<Vec<SymbolInfo>>,
+    rep: Reporter,
 }
 
 impl Checker {
@@ -44,6 +38,7 @@ impl Checker {
         Self
         {
             stack: Vec::new(),
+            rep: Reporter::new(),
         }
     }
 
@@ -110,6 +105,17 @@ impl Checker {
 
                         var.ty = ty.clone();
                     }
+                    else
+                    {
+                        if let Some(val) = var.val.as_mut()
+                        {
+                            let t = self.check_val(val);
+                            if t != var.ty().to_owned()
+                            {
+                                self.rep.add(NyonError::throw(crate::error::Kind::TypeMismatch(var.ty.to_owned(), t)));
+                            }
+                        }
+                    }
                     
                     if let Some(last) = self.stack.last_mut()
                     {
@@ -117,18 +123,13 @@ impl Checker {
                             var.identifier().to_string(),
                             TypeInfo
                             {
-                                ty: ty.to_owned(),
+                                ty: var.ty().to_owned(),
                                 mutable: var.mutable()
                             })
                         );
                     }
-                    
-                    if let Some(val) = var.val.as_mut()
-                    {
-                        self.check_val(val);
-                    }
                 },
-                Items::Block(b) => {
+                Items::Expr(Value::Block(b)) => {
                     self.stack.push(Vec::new());
                     self.check_body(b);
                     self.stack.pop();
@@ -171,7 +172,7 @@ impl Checker {
                 ty = Type::StringLiteral;
             },
             Value::Boolean(_) => ty = Type::Boolean,
-            Value::Call(_, values) => todo!(),
+            Value::Call(_, values) => {},
             Value::Null => ty = Type::None,
             Value::Block(b) => {
                 self.stack.push(Vec::new());
@@ -181,5 +182,10 @@ impl Checker {
         }
         
         ty
+    }
+
+    pub fn reporter(&mut self) -> &Reporter
+    {
+        &self.rep
     }
 }

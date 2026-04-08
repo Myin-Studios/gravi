@@ -258,8 +258,25 @@ impl CGenerator {
                     mangled.id = mangled_name;
                     res.push_str(&self.gen_var(&mangled));
                 },
-                Items::Block(_) => {
-                    // error! block inside another block without any return!
+                Items::Expr(expr) => {
+                    match expr {
+                        Value::Block(_) => {}, // error! block inside another block without any return!
+                        Value::Expression(Expr::Identifier(name)) => {
+                            id = name_map.iter()
+                                .find(|(orig, _)| orig == name)
+                                .map(|(_, mangled)| mangled.clone())
+                                .unwrap_or_else(|| name.clone());
+                        },
+                        Value::Expression(expr) => {
+                            id = self.gen_expr(expr);
+                        },
+                        Value::StringLiteral(s) => id = s.to_string(),
+                        Value::Boolean(b) => {
+                            if b == &BoolValue::True { id = "true".to_string() } else {id = "false".to_string(); }
+                        },
+                        Value::Call(_, values) => id = self.gen_call(values),
+                        Value::Null => {},
+                    }
                 },
                 _ => {}
             }
@@ -316,7 +333,7 @@ impl CGenerator {
                         bd.push_str(self.gen_var(var).as_str());
                     },
                     Items::Ret(val) => bd.push_str(self.gen_ret(val).as_str()),
-                    Items::Call(id, vals) => {
+                    Items::Expr(Value::Call(id, vals)) => {
                         if id == "show"
                         {
                             bd.push_str(self.gen_show(vals).as_str())

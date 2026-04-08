@@ -76,6 +76,8 @@ fn build(input: String, filename: &String, ty: BackendType, target: Target, flag
 
     let mut tc = typechecker::Checker::new();
     tc.process(p.output_mut());
+    tc.reporter().fire_all();
+    if tc.reporter().has_errors() { std::process::exit(1); }
 
     let cg = match ty {
         BackendType::ZIG | BackendType::GCC | BackendType::LLVM /* to be moved in another branch!*/ => {

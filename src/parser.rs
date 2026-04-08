@@ -215,12 +215,21 @@ impl Parser {
                     TokenKind::Punctuation(Punctuation::RParen) => {
                         tokens.pop();
                         break;
-                    }
+                    },
+                    TokenKind::Punctuation(Punctuation::LBrace) => {
+                        tokens.pop();
+                        let block = self.parse_block(tokens, false);
+                        if tokens.last().map(|t| t.kind()) == Some(&TokenKind::Punctuation(Punctuation::RBrace)) {
+                            tokens.pop();
+                        }
+                        val = Value::Block(block);
+                        break;
+                    },
                     TokenKind::Punctuation(Punctuation::RBrace) | TokenKind::Punctuation(Punctuation::SemiColon) => {
                         self.rep.add(NyonError::throw(crate::error::Kind::UnclosedParenthesis)
                                                 .file(t.file())
                                                 .at(t.line(), t.column())
-                                                .hint(format!("Try writing {} to close the expression before this token.", ")".bright_blue().bold()).as_str()));
+                                                .hint(format!("Try writing {} to close the expression before this token.", "}".bright_blue().bold()).as_str()));
 
                         break;
                     }
@@ -735,5 +744,10 @@ impl Parser {
     {
         println!("\n{:#?}", self.prog);
         &self.prog
+    }
+
+    pub fn output_mut(&mut self) -> &mut Program
+    {
+        &mut self.prog
     }
 }

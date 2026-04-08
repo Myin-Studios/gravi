@@ -6,6 +6,7 @@ pub struct CGenerator
 {
     out: String,
     rep: Reporter,
+    block_counter: usize,
 }
 
 impl CGenerator {
@@ -15,6 +16,7 @@ impl CGenerator {
         {
             out: String::new(),
             rep: Reporter::new(),
+            block_counter: 0,
         }
     }
 
@@ -149,6 +151,11 @@ impl CGenerator {
 
             },
             Value::Call(_, _) => {},
+            Value::Block(items) => {
+                let (val, id) = self.gen_block(items);
+                res.push_str(&format!("{}", val));
+                res.push_str(&format!("\t{}{} {} = {};\n", mutable, ty, var.identifier(), id));
+            },
         }
 
         res
@@ -211,6 +218,54 @@ impl CGenerator {
         };
 
         res
+    }
+
+    fn gen_block(&mut self, items: &Vec<Items>) -> (String, String)
+    {
+        let block_id = self.block_counter;
+        self.block_counter += 1;
+
+        let mut res = String::new();
+        let mut id = String::new();
+        let mut name_map: Vec<(String, String)> = Vec::new();
+
+        for item in items
+        {
+            match item {
+                Items::Ret(val) => {
+                    match val {
+                        Value::Expression(Expr::Identifier(name)) => {
+                            id = name_map.iter()
+                                .find(|(orig, _)| orig == name)
+                                .map(|(_, mangled)| mangled.clone())
+                                .unwrap_or_else(|| name.clone());
+                        },
+                        Value::Expression(expr) => {
+                            id = self.gen_expr(expr);
+                        },
+                        Value::Block(vals) => {
+                            let (inner_res, inner_id) = self.gen_block(vals);
+                            res.push_str(&inner_res);
+                            id = inner_id;
+                        },
+                        _ => {}
+                    }
+                },
+                Items::Var(v) => {
+                    let mangled_name = format!("__b{}_{}", block_id, v.identifier());
+                    name_map.push((v.identifier().to_string(), mangled_name.clone()));
+                    let mut mangled = v.clone();
+                    mangled.id = mangled_name;
+                    res.push_str(&self.gen_var(&mangled));
+                },
+                Items::Block(_) => {
+                    // error! block inside another block without any return!
+                },
+                _ => {}
+            }
+        }
+
+        (res, id)
     }
 
     fn gen_fun(&mut self, fun: &Function) -> String
@@ -306,6 +361,7 @@ impl CGenerator {
                 },
                 Value::Call(id, values) => res.push_str(format!("nn_{}({})", id, self.gen_call(values)).as_str()),
                 Value::Null => res.push_str(""),
+                Value::Block(_) => {}
             }
 
             if i < vals.len() - 1
@@ -337,6 +393,7 @@ impl CGenerator {
                 },
                 Value::Call(id, values) => res.push_str(format!("\"%g\\n\", nn_{}({})", id, self.gen_call(values)).as_str()),
                 Value::Null => res.push_str("\"\""),
+                Value::Block(_) => {}
             }
         }
 
@@ -363,6 +420,7 @@ impl CGenerator {
             },
             Value::Call(_, _) => "".to_string(),
             Value::Null => "".to_string(),
+            Value::Block(_) => "".to_string()
         }).as_str());
 
         res

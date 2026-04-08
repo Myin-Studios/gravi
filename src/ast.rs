@@ -1,12 +1,12 @@
 use crate::lexer::{Operator, Type};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Program
 {
     pub items: Vec<Global>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Global
 {
     // Import,
@@ -15,7 +15,7 @@ pub enum Global
     // Inter,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Items
 {
     Var(VarDecl),
@@ -34,7 +34,7 @@ pub enum Parallelism
     None,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct VarDecl
 {
     pub par: Parallelism,
@@ -97,6 +97,7 @@ pub enum Value
     StringLiteral(String),
     Boolean(BoolValue),
     Call(String, Vec<Value>),
+    Block(Vec<Items>),
     Null
 }
 
@@ -254,7 +255,7 @@ impl Range {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Function
 {
     pub lambda: bool,

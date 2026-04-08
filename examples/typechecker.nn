@@ -1,12 +1,41 @@
-fun outer(a: string): string
+// fun outer(a: string): string
+// {
+//     var b: string = a;
+// 
+//     var some = "some string";
+// 
+//     var some2 = {
+//         ret {
+//             ret {
+//                 var v = "HEH";
+//                 ret v;
+//             }
+//         }
+//     }
+// 
+//     ret b;
+// }
+
+fun main()
 {
-    var b: string = a;
+    var some = "some string";
 
-    {
-        var c: string = "";
-        var d: string = "";
-        var e: string = c;
+    var some2 = {
+        ret {
+            ret {
+                var v = "HEH";
+                ret v;
+            }
+        }
     }
-
-    ret b;
+    var some3 = {
+        ret {
+            ret {
+                var v = "HEH";
+                ret v;
+            }
+        }
+    }
+    
+    show(some2);
 }

@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use colored::Colorize;
 
 use crate::{backend::Backend, error::{NyonError, Reporter}, lexer::{Operator, Type}, ast::*};
@@ -8,6 +10,7 @@ pub struct CGenerator
     rep: Reporter,
     block_counter: usize,
     name_map: Vec<(String, String)>,
+    inline: VecDeque<String>,
 }
 
 impl CGenerator {
@@ -18,7 +21,8 @@ impl CGenerator {
             out: String::new(),
             rep: Reporter::new(),
             block_counter: 0,
-            name_map: Vec::new()
+            name_map: Vec::new(),
+            inline: VecDeque::new(),
         }
     }
 
@@ -56,6 +60,59 @@ impl CGenerator {
                 "void".to_string()
             },
         }
+    }
+
+    fn preprocess(&mut self, input: &Program) -> String
+    {
+        let mut res = String::new();
+
+        for item in input.items()
+        {
+            match item {
+                Global::Fun(fun) => {
+                    for elem in fun.body()
+                    {
+                        match elem {
+                            Items::Var(var) => {
+                                match var.value().as_ref().unwrap_or(&Value::Null) {
+                                    Value::IfElse(ifelse) => {
+                                        res.push_str(&self.pregen_if_ternary(ifelse));
+                                    },
+                                    _ => {}
+                                }
+                            },
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+
+        res
+    }
+
+    fn pregen_if_ternary(&mut self, ifelse: &IfElse) -> String
+    {
+        let mut res = String::new();
+        
+        let ret = self.get_type(ifelse.ret.as_ref().unwrap_or(&Type::None));
+        let mut id = format!("__nn_inline_if{}", self.block_counter);
+
+        self.inline.push_back(id.clone());
+
+        res.push_str(&format!("static inline {} {}() {{\n{}\n}}\n", ret, id, self.gen_block(ifelse.body()).0));
+
+        if let Some(elif) = ifelse.else_if()
+        {
+            id = format!("__nn_inline_if{}", self.block_counter);
+
+            self.inline.push_back(id.clone());
+            
+            res.push_str(&format!("static inline {} {}() {{\n{}\n}}\n", ret, id, self.gen_block(elif.body()).0));
+        }
+        
+
+        res
     }
 
     fn get_set_mangled(&mut self, name: &String) -> String
@@ -176,7 +233,9 @@ impl CGenerator {
                 res.push_str(&format!("{}", val));
                 res.push_str(&format!("\t{}{} {} = {};\n", mutable, ty, var.identifier(), id));
             },
-            Value::IfElse(if_else) => {},
+            Value::IfElse(ifelse) => {
+                res.push_str(&format!("\t{}{} {} = {};\n", mutable, ty, var.identifier(), self.gen_if_ternary(ifelse)));
+            },
         }
 
         res
@@ -253,20 +312,7 @@ impl CGenerator {
         {
             match item {
                 Items::Ret(val) => {
-                    match val {
-                        Value::Expression(Expr::Identifier(name)) => {
-                            id = self.get_set_mangled(name);
-                        },
-                        Value::Expression(expr) => {
-                            id = self.gen_expr(expr);
-                        },
-                        Value::Block(vals) => {
-                            let (inner_res, inner_id) = self.gen_block(vals);
-                            res.push_str(&inner_res);
-                            id = inner_id;
-                        },
-                        _ => {}
-                    }
+                    res.push_str(&self.gen_ret(val));
                 },
                 Items::Var(v) => {
                     let mut mangled = v.clone();
@@ -289,7 +335,7 @@ impl CGenerator {
                         Value::Call(call_id, vals) => {
                             if call_id == "show"
                             {
-                                res = self.gen_show(vals)
+                                res.push_str(&self.gen_show(vals));
                             }
                             else {
                                 res = format!("\tnn_{}({});\n", call_id, self.gen_call(vals));
@@ -333,6 +379,19 @@ impl CGenerator {
                 res.push_str("\n\t}\n");
             }
         }
+        
+        res
+    }
+
+    fn gen_if_ternary(&mut self, ifelse: &IfElse) -> String
+    {
+        let mut res = String::new();
+        
+        res.push_str(&format!("({}) ? {}() : {}()",
+                                    self.gen_expr(ifelse.condition().as_ref().unwrap_or(&Expr::Null)),
+                                    self.inline.pop_front().unwrap_or(String::new()),
+                                    self.inline.pop_front().unwrap_or(String::new()
+                                )));
         
         res
     }
@@ -460,8 +519,17 @@ impl CGenerator {
         let mut res: String = String::new();
 
         res.push_str(format!("\treturn {};\n", match val {
-            Value::Expression(expr) => self.gen_expr(expr),
-            Value::StringLiteral(str) => str.to_string(),
+            Value::Expression(Expr::Identifier(name)) => {
+                self.get_set_mangled(name)
+            },
+            Value::Expression(expr) => {
+                self.gen_expr(expr)
+            },
+            Value::Block(vals) => {
+                let (inner_res, inner_id) = self.gen_block(vals);
+                inner_res
+            },
+            Value::StringLiteral(str) => format!("\"{}\"", str.to_string()),
             Value::Boolean(b) => {
                 if b == &BoolValue::True
                 {
@@ -492,6 +560,9 @@ impl Backend for CGenerator {
         self.out.push_str("#include <stdlib.h>\n");
         self.out.push_str("#include <math.h>\n");
         self.out.push_str("#include <stdbool.h>\n\n");
+
+        let preprocessed = self.preprocess(prog);
+        self.out.push_str(&preprocessed);
 
         let mut temp: String = String::new();
         let mut is_main: bool = false;

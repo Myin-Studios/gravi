@@ -34,4 +34,14 @@ fun main()
     {
         show("C!");
     }
+
+    var some: string = if a { ret "some string"; } else { ret "some other string"; };
+
+    var other = if false {
+        show("Oh, this is false!");
+        ret "FALSE";
+    } else {
+        show("Oh, this is true!");
+        ret "TRUE";
+    }
 }

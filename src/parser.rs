@@ -225,6 +225,11 @@ impl Parser {
                         val = Value::Block(block);
                         break;
                     },
+                    TokenKind::Keyword(Keyword::If) => {
+                        tokens.pop();
+                        val = Value::IfElse(self.parse_if(tokens, false));
+                        break;
+                    },
                     TokenKind::Punctuation(Punctuation::RBrace) | TokenKind::Punctuation(Punctuation::SemiColon) => {
                         self.rep.add(NyonError::throw(crate::error::Kind::UnclosedParenthesis)
                                                 .file(t.file())
@@ -232,7 +237,7 @@ impl Parser {
                                                 .hint(format!("Try writing {} to close the expression before this token.", "}".bright_blue().bold()).as_str()));
 
                         break;
-                    }
+                    },
                     _ => {
                         self.rep.add(NyonError::throw(crate::error::Kind::ExpectedValue)
                                                 .file(t.file())
@@ -823,11 +828,13 @@ impl Parser {
 
     pub fn output(&self) -> &Program
     {
+        println!("\n{:#?}", self.prog);
         &self.prog
     }
 
     pub fn output_mut(&mut self) -> &mut Program
     {
+        println!("\n{:#?}", self.prog);
         &mut self.prog
     }
 }

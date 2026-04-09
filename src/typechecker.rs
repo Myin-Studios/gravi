@@ -134,14 +134,15 @@ impl Checker {
                     self.check_body(b);
                     self.stack.pop();
                 },
+                Items::Expr(Value::IfElse(ifelse)) => {
+                    ty = self.check_if(ifelse);
+                },
                 Items::Ret(val) => {
                     ty = self.check_val(val);
                 }
                 _ => {}
             }
         }
-
-        println!("\n{:#?}\n", self.stack);
 
         ty
     }
@@ -179,9 +180,41 @@ impl Checker {
                 ty = self.check_body(b);
                 self.stack.pop();
             },
-            Value::IfElse(if_else) => {},
+            Value::IfElse(ifelse) => {
+                ty = self.check_if(ifelse);
+            },
         }
         
+        ty
+    }
+    
+    fn check_if(&mut self, ifelse: &mut IfElse) -> Type
+    {
+        let ty: Type;
+
+        self.stack.push(Vec::new());
+        ty = self.check_body(ifelse.body.as_mut());
+        self.stack.pop();
+
+        if let Some(elif) = ifelse.elif.as_mut()
+        {
+            let elif_ty = self.check_if(elif);
+
+            if ty != elif_ty
+            {
+                self.rep.add(NyonError::throw(crate::error::Kind::TypeMismatch(ty.clone(), elif_ty)));
+            }
+            else if elif.ret.is_none()
+            {
+                elif.ret = Some(ty.clone());
+            }
+        }
+
+        if ifelse.ret.is_none()
+        {
+            ifelse.ret = Some(ty.clone());
+        }
+
         ty
     }
 

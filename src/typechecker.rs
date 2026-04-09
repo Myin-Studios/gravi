@@ -179,6 +179,7 @@ impl Checker {
                 ty = self.check_body(b);
                 self.stack.pop();
             },
+            Value::IfElse(if_else) => {},
         }
         
         ty

@@ -651,6 +651,9 @@ impl Parser {
                             Keyword::Ret if !top_level => {
                                 stmts.push(Items::Ret(self.parse_value(tokens)));
                             },
+                            Keyword::If => {
+                                stmts.push(Items::Expr(Value::IfElse(self.parse_if(tokens, false))));
+                            },
                             _ => {
                                 self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
                                             .file(t.file())
@@ -735,6 +738,84 @@ impl Parser {
         vals
     }
 
+    fn parse_if(&mut self, tokens: &mut Vec<Token>, is_else: bool) -> IfElse
+    {
+        let mut cond: Option<Expr> = None;
+
+        let mut body: Vec<Items> = Vec::new();
+
+        let mut elif: Option<Box<IfElse>> = None;
+
+        loop {
+            if let Some(t) = tokens.last().cloned()
+            {
+                match t.kind() {
+                    TokenKind::Punctuation(Punctuation::LParen) | TokenKind::Operator(_) | TokenKind::Value(_) | TokenKind::Identifier(_) => {
+                        if is_else { // else cannot have conditions!
+                            break;
+                        }
+                        cond = Some(self.parse_binary(tokens, 0));
+                    },
+                    TokenKind::Punctuation(Punctuation::LBrace) => {
+                        tokens.pop();
+                        body.extend(self.parse_block(tokens, false));
+                    },
+                    TokenKind::Punctuation(Punctuation::RBrace) => {
+                        tokens.pop();
+
+                        if let Some(next) = tokens.last()
+                        {
+                            if matches!(next.kind(), TokenKind::Keyword(Keyword::Else))
+                            {
+                                if is_else { // error! else after else, without an 'if' before??
+                                    break;
+                                }
+                                tokens.pop();
+                                
+                                let mut is_else = true;
+
+                                if let Some(is_elif) = tokens.last()
+                                {
+                                    if matches!(is_elif.kind(), TokenKind::Keyword(Keyword::If))
+                                    {
+                                        tokens.pop();
+                                        is_else = false;
+                                    }
+                                }
+                                else {
+                                    break;
+                                }
+
+                                elif = Some(Box::new(self.parse_if(tokens, is_else)));
+                                break;
+                            }
+                            else {
+                                break;
+                            }
+                        }
+                        else {
+                            break;
+                        }
+                    },
+                    _ => {
+                        break;
+                    } // error! unexpected token
+                }
+            }
+            else {
+                break;
+            }
+        }
+
+        IfElse
+        {
+            cond,
+            body,
+            elif,
+            ret: None
+        }
+    }
+
     pub fn reporter(&self) -> &Reporter
     {
         &self.rep
@@ -742,7 +823,6 @@ impl Parser {
 
     pub fn output(&self) -> &Program
     {
-        println!("\n{:#?}", self.prog);
         &self.prog
     }
 

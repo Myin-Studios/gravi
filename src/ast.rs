@@ -90,6 +90,48 @@ pub enum BoolValue
 }
 
 #[derive(Debug, Clone)]
+pub struct IfElse
+{
+    pub cond: Option<Expr>,
+    pub body: Vec<Items>,
+    pub elif: Option<Box<IfElse>>,
+    pub ret: Option<Type>
+}
+
+impl IfElse {
+    pub fn new() -> Self
+    {
+        Self
+        {
+            cond: None,
+            body: Vec::new(),
+            elif: None,
+            ret: None
+        }
+    }
+
+    pub fn condition(&self) -> &Option<Expr>
+    {
+        &self.cond
+    }
+
+    pub fn body(&self) -> &Vec<Items>
+    {
+        &self.body
+    }
+
+    pub fn else_if(&self) -> &Option<Box<IfElse>>
+    {
+        &self.elif
+    }
+
+    pub fn ret(&self) -> &Option<Type>
+    {
+        &self.ret
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Value
 {
     Expression(Expr),
@@ -97,6 +139,7 @@ pub enum Value
     Boolean(BoolValue),
     Call(String, Vec<Value>),
     Block(Vec<Items>),
+    IfElse(IfElse),
     Null
 }
 

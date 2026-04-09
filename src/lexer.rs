@@ -466,6 +466,10 @@ impl Lexer {
             "|" => Token::new(TokenKind::Operator(Operator::BWOr), &self.file, self.line, self.column - word.len()),
             "&" => Token::new(TokenKind::Operator(Operator::BWAnd), &self.file, self.line, self.column - word.len()),
 
+            // Boolean Values
+            "true" => Token::new(TokenKind::Value(word.to_string()), &self.file, self.line, self.column - word.len()),
+            "false" => Token::new(TokenKind::Value(word.to_string()), &self.file, self.line, self.column - word.len()),
+
             _ => Token::new(TokenKind::Identifier(word.to_string()), &self.file, self.line, self.column - word.len())
         }
     }
@@ -620,8 +624,6 @@ impl Lexer {
                 break;
             }
         }
-        
-        println!("{:#?}", self.tokens);
     }
 
     pub fn tokens(&self) -> &Vec<Token>

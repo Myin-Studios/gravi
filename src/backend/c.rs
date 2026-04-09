@@ -7,6 +7,7 @@ pub struct CGenerator
     out: String,
     rep: Reporter,
     block_counter: usize,
+    name_map: Vec<(String, String)>,
 }
 
 impl CGenerator {
@@ -17,6 +18,7 @@ impl CGenerator {
             out: String::new(),
             rep: Reporter::new(),
             block_counter: 0,
+            name_map: Vec::new()
         }
     }
 
@@ -54,6 +56,24 @@ impl CGenerator {
                 "void".to_string()
             },
         }
+    }
+
+    fn get_set_mangled(&mut self, name: &String) -> String
+    {
+        let mut id: Option<String> = None;
+
+        id = self.name_map.iter()
+                     .find(|(orig, _)| orig == name)
+                     .map(|(_, mangled)| mangled.clone());
+
+        if id.is_none()
+        {
+            let mangled_name = format!("__b{}_{}", self.block_counter, name);
+            self.name_map.push((name.to_string(), mangled_name.clone()));
+            id = Some(mangled_name);
+        }
+                     
+        id.unwrap_or(name.clone())
     }
 
     fn gen_var(&mut self, var: &VarDecl) -> String
@@ -156,6 +176,7 @@ impl CGenerator {
                 res.push_str(&format!("{}", val));
                 res.push_str(&format!("\t{}{} {} = {};\n", mutable, ty, var.identifier(), id));
             },
+            Value::IfElse(if_else) => {},
         }
 
         res
@@ -166,7 +187,7 @@ impl CGenerator {
         let mut res: String = String::new();
         
         match expr {
-            Expr::Identifier(id) => res = id.to_string(),
+            Expr::Identifier(id) => res = self.get_set_mangled(id),
             Expr::Literal(val) => res = val.to_string(),
             Expr::Binary(b) => {
                 let op = match b.op()
@@ -222,12 +243,11 @@ impl CGenerator {
 
     fn gen_block(&mut self, items: &Vec<Items>) -> (String, String)
     {
-        let block_id = self.block_counter;
+        let len = self.name_map.len();
         self.block_counter += 1;
 
         let mut res = String::new();
         let mut id = String::new();
-        let mut name_map: Vec<(String, String)> = Vec::new();
 
         for item in items
         {
@@ -235,10 +255,7 @@ impl CGenerator {
                 Items::Ret(val) => {
                     match val {
                         Value::Expression(Expr::Identifier(name)) => {
-                            id = name_map.iter()
-                                .find(|(orig, _)| orig == name)
-                                .map(|(_, mangled)| mangled.clone())
-                                .unwrap_or_else(|| name.clone());
+                            id = self.get_set_mangled(name);
                         },
                         Value::Expression(expr) => {
                             id = self.gen_expr(expr);
@@ -252,20 +269,15 @@ impl CGenerator {
                     }
                 },
                 Items::Var(v) => {
-                    let mangled_name = format!("__b{}_{}", block_id, v.identifier());
-                    name_map.push((v.identifier().to_string(), mangled_name.clone()));
                     let mut mangled = v.clone();
-                    mangled.id = mangled_name;
+                    mangled.id = self.get_set_mangled(&v.id);
                     res.push_str(&self.gen_var(&mangled));
                 },
                 Items::Expr(expr) => {
                     match expr {
                         Value::Block(_) => {}, // error! block inside another block without any return!
                         Value::Expression(Expr::Identifier(name)) => {
-                            id = name_map.iter()
-                                .find(|(orig, _)| orig == name)
-                                .map(|(_, mangled)| mangled.clone())
-                                .unwrap_or_else(|| name.clone());
+                            id = self.get_set_mangled(name);
                         },
                         Value::Expression(expr) => {
                             id = self.gen_expr(expr);
@@ -274,7 +286,18 @@ impl CGenerator {
                         Value::Boolean(b) => {
                             if b == &BoolValue::True { id = "true".to_string() } else {id = "false".to_string(); }
                         },
-                        Value::Call(_, values) => id = self.gen_call(values),
+                        Value::Call(call_id, vals) => {
+                            if call_id == "show"
+                            {
+                                res = self.gen_show(vals)
+                            }
+                            else {
+                                res = format!("\tnn_{}({});\n", call_id, self.gen_call(vals));
+                            }
+                        },
+                        Value::IfElse(ifelse) => {
+                            res.push_str(&self.gen_if(&ifelse));
+                        }
                         Value::Null => {},
                     }
                 },
@@ -282,7 +305,36 @@ impl CGenerator {
             }
         }
 
+        self.name_map.truncate(len);
+
         (res, id)
+    }
+
+    fn gen_if(&mut self, ifelse: &IfElse) -> String
+    {
+        let mut res = String::new();
+
+        res.push_str(&format!("\tif ({})", self.gen_expr(ifelse.condition().as_ref().unwrap_or(&Expr::Null))));
+        res.push_str("\n\t{\n");
+        res.push_str(&format!("\t{}", self.gen_block(ifelse.body()).0));
+        res.push_str("\n\t}\n");
+
+        if let Some(elif) = ifelse.else_if()
+        {
+            res.push_str("\telse ");
+            
+            if elif.condition().is_some()
+            {
+                res.push_str(&self.gen_if(elif));
+            }
+            else {
+                res.push_str("\n\t{\n");
+                res.push_str(&format!("\t{}", self.gen_block(elif.body()).0));
+                res.push_str("\n\t}\n");
+            }
+        }
+        
+        res
     }
 
     fn gen_fun(&mut self, fun: &Function) -> String
@@ -326,25 +378,7 @@ impl CGenerator {
         } else {
             let mut bd = " {\n\n".to_string();
 
-            for item in fun.body()
-            {
-                match item {
-                    Items::Var(var) => {
-                        bd.push_str(self.gen_var(var).as_str());
-                    },
-                    Items::Ret(val) => bd.push_str(self.gen_ret(val).as_str()),
-                    Items::Expr(Value::Call(id, vals)) => {
-                        if id == "show"
-                        {
-                            bd.push_str(self.gen_show(vals).as_str())
-                        }
-                        else {
-                            bd.push_str(format!("\tnn_{}({});\n", id, self.gen_call(vals)).as_str());
-                        }
-                    },
-                    _ => {}
-                }
-            }
+            bd.push_str(&self.gen_block(fun.body()).0);
             
             bd.push_str("\n}");
             
@@ -379,6 +413,7 @@ impl CGenerator {
                 Value::Call(id, values) => res.push_str(format!("nn_{}({})", id, self.gen_call(values)).as_str()),
                 Value::Null => res.push_str(""),
                 Value::Block(_) => {}
+                Value::IfElse(if_else) => {},
             }
 
             if i < vals.len() - 1
@@ -411,6 +446,7 @@ impl CGenerator {
                 Value::Call(id, values) => res.push_str(format!("\"%g\\n\", nn_{}({})", id, self.gen_call(values)).as_str()),
                 Value::Null => res.push_str("\"\""),
                 Value::Block(_) => {}
+                Value::IfElse(if_else) => {},
             }
         }
 
@@ -437,7 +473,8 @@ impl CGenerator {
             },
             Value::Call(_, _) => "".to_string(),
             Value::Null => "".to_string(),
-            Value::Block(_) => "".to_string()
+            Value::Block(_) => "".to_string(),
+            Value::IfElse(if_else) => "".to_string(),
         }).as_str());
 
         res

@@ -7,7 +7,7 @@ pub struct CGenerator
     out:           String,
     rep:           Reporter,
     block_counter: usize,
-    name_map:      Vec<(String, String)>,
+    name_map:      Vec<(String, String, Type)>,  // (original, mangled, type)
     inline:        VecDeque<String>,
 }
 
@@ -117,14 +117,55 @@ impl CGenerator {
 
     fn get_set_mangled(&mut self, name: &str) -> String
     {
-        if let Some((_, mangled)) = self.name_map.iter().find(|(orig, _)| orig == name)
+        if let Some((_, mangled, _)) = self.name_map.iter().find(|(orig, _, _)| orig == name)
         {
             return mangled.clone();
         }
 
         let mangled = format!("__b{}_{}", self.block_counter, name);
-        self.name_map.push((name.to_string(), mangled.clone()));
+        self.name_map.push((name.to_string(), mangled.clone(), Type::None));
         mangled
+    }
+
+    fn register_var(&mut self, name: &str, ty: Type) -> String
+    {
+        if let Some((_, mangled, _)) = self.name_map.iter().find(|(orig, _, _)| orig == name)
+        {
+            return mangled.clone();
+        }
+
+        let mangled = format!("__b{}_{}", self.block_counter, name);
+        self.name_map.push((name.to_string(), mangled.clone(), ty));
+        mangled
+    }
+
+    fn type_of_var(&self, name: &str) -> Type
+    {
+        self.name_map.iter()
+            .find(|(orig, _, _)| orig == name)
+            .map(|(_, _, ty)| ty.clone())
+            .unwrap_or(Type::None)
+    }
+
+    fn printf_fmt(ty: &Type) -> &'static str
+    {
+        match ty {
+            Type::Numeric(n) => match n {
+                crate::lexer::Numeric::F16 | crate::lexer::Numeric::F32 => "%g",
+                crate::lexer::Numeric::F64 => "%lg",
+                crate::lexer::Numeric::U8
+                | crate::lexer::Numeric::U16
+                | crate::lexer::Numeric::U32 => "%u",
+                crate::lexer::Numeric::U64 => "%lu",
+                crate::lexer::Numeric::I8
+                | crate::lexer::Numeric::I16
+                | crate::lexer::Numeric::I32 => "%d",
+                crate::lexer::Numeric::I64 => "%ld",
+            },
+            Type::StringLiteral => "%s",
+            Type::Character     => "%c",
+            _ => "%s",
+        }
     }
 
     fn gen_var(&mut self, var: &VarDecl) -> String
@@ -244,6 +285,12 @@ impl CGenerator {
                 let op = match b.op() {
                     Operator::LAnd => "&&",
                     Operator::LOr  => "||",
+                    Operator::NEq => "!=",
+                    Operator::Eq => "==",
+                    Operator::LE => "<=",
+                    Operator::GE => ">=",
+                    Operator::L => "<",
+                    Operator::G => ">",
                     _ => ""
                 };
                 let l = self.gen_expr(b.left());
@@ -286,7 +333,7 @@ impl CGenerator {
                     match v {
                         Var::Decl(v) => {
                             let mut mangled = v.clone();
-                            mangled.id = self.get_set_mangled(&v.id);
+                            mangled.id = self.register_var(&v.id, v.ty().clone());
                             res.push_str(&self.gen_var(&mangled));
                         },
                         Var::Var(v) => {
@@ -461,16 +508,41 @@ impl CGenerator {
         for val in vals
         {
             match val {
-                Value::Expression(expr) => res.push_str(&format!("\"%g\\n\", {}", self.gen_expr(expr))),
-                Value::StringLiteral(s) => res.push_str(&format!("\"%s\\n\", \"{}\"", s)),
+                Value::Expression(Expr::Identifier(name)) => {
+                    let ty      = self.type_of_var(name);
+                    let mangled = self.get_set_mangled(name);
+
+                    if ty == Type::Boolean {
+                        res.push_str(&format!("\"%s\\n\", {} ? \"true\" : \"false\"", mangled));
+                    } else {
+                        let fmt = Self::printf_fmt(&ty);
+                        res.push_str(&format!("\"{}\\n\", {}", fmt, mangled));
+                    }
+                },
+                Value::Expression(Expr::Literal(lit)) => {
+                    if lit.contains('.') {
+                        res.push_str(&format!("\"%g\\n\", {}", lit));
+                    } else {
+                        res.push_str(&format!("\"%d\\n\", {}", lit));
+                    }
+                },
+                Value::Expression(expr) => {
+                    let generated = self.gen_expr(expr);
+                    res.push_str(&format!("\"%g\\n\", {}", generated));
+                },
+                Value::StringLiteral(s) => {
+                    res.push_str(&format!("\"%s\\n\", \"{}\"", s));
+                },
                 Value::Boolean(b) => {
                     let bstr = if b == &BoolValue::True { "true" } else { "false" };
                     res.push_str(&format!("\"%s\\n\", \"{}\"", bstr));
                 },
-                Value::Call(id, values) => res.push_str(&format!("\"%g\\n\", nn_{}({})", id, self.gen_call(values))),
-                Value::Null             => res.push_str("\"\""),
-                Value::Block(_, _)      => {},
-                Value::IfElse(_)        => {},
+                Value::Call(id, values) => {
+                    res.push_str(&format!("\"%g\\n\", nn_{}({})", id, self.gen_call(values)));
+                },
+                Value::Null        => res.push_str("\"\""),
+                Value::Block(_, _) => {},
+                Value::IfElse(_)   => {},
             }
         }
 

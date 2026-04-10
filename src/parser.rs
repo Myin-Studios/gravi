@@ -320,7 +320,7 @@ impl Parser {
 
     fn parse_binary(&mut self, tokens: &mut Vec<Token>, lvl: usize) -> Expr
     {
-        if lvl > 3
+        if lvl > 5
         {
             return self.parse_expr(tokens);
         }
@@ -334,10 +334,13 @@ impl Parser {
                     TokenKind::Operator(o) => {
 
                         let (op, _, r) = match lvl {
-                            0 if o == &Operator::LOr  => (o.to_owned(), tokens.pop(), self.parse_binary(tokens, lvl + 1)),
-                            1 if o == &Operator::LAnd => (o.to_owned(), tokens.pop(), self.parse_binary(tokens, lvl + 1)),
-                            2 if o == &Operator::BWOr  => (o.to_owned(), tokens.pop(), self.parse_binary(tokens, lvl + 1)),
-                            3 if o == &Operator::BWAnd => (o.to_owned(), tokens.pop(), self.parse_binary(tokens, lvl + 1)),
+                            0 if o == &Operator::LOr                       => (o.to_owned(), tokens.pop(), self.parse_binary(tokens, lvl + 1)),
+                            1 if o == &Operator::LAnd                      => (o.to_owned(), tokens.pop(), self.parse_binary(tokens, lvl + 1)),
+                            2 if o == &Operator::BWOr                      => (o.to_owned(), tokens.pop(), self.parse_binary(tokens, lvl + 1)),
+                            3 if o == &Operator::BWAnd                     => (o.to_owned(), tokens.pop(), self.parse_binary(tokens, lvl + 1)),
+                            4 if o == &Operator::Eq || o == &Operator::NEq => (o.to_owned(), tokens.pop(), self.parse_binary(tokens, lvl + 1)),
+                            5 if o == &Operator::G || o == &Operator::L
+                            || o == &Operator::GE || o == &Operator::LE    => (o.to_owned(), tokens.pop(), self.parse_binary(tokens, lvl + 1)),
                             _ => return l
                         };
 
@@ -659,9 +662,18 @@ impl Parser {
                             }
                         }
                     },
-                    TokenKind::Identifier(_) => {
-                        tokens.push(t);
-                        stmts.push(Items::Var(Var::Var(self.parse_var(tokens))));
+                    TokenKind::Identifier(id) => {
+                        // t è già stato poppato: tokens.last() è il token DOPO l'identificatore
+                        let id = id.clone();
+                        if tokens.last().map(|n| n.kind()) == Some(&TokenKind::Punctuation(Punctuation::LParen)) {
+                            // chiamata a funzione: parse_args consuma la '(' e gli argomenti
+                            let params = self.parse_args(tokens);
+                            stmts.push(Items::Expr(Value::Call(id, params)));
+                        } else {
+                            // assegnazione: rimettiamo l'identificatore per parse_var
+                            tokens.push(t);
+                            stmts.push(Items::Var(Var::Var(self.parse_var(tokens))));
+                        }
                     },
                     TokenKind::Punctuation(Punctuation::LBrace) => {
                         stmts.push(Items::Expr(Value::Block(Type::None, self.parse_block(tokens, false))));
@@ -798,5 +810,5 @@ impl Parser {
 
     pub fn reporter(&self) -> &Reporter  { &self.rep }
     pub fn output(&self)   -> &Program   { &self.prog }
-    pub fn output_mut(&mut self) -> &mut Program { &mut self.prog }
+    pub fn output_mut(&mut self) -> &mut Program { println!("{:#?}", self.prog); &mut self.prog }
 }

@@ -212,24 +212,7 @@ impl Checker {
 
         match val {
             Value::Expression(expr) => {
-                match expr {
-                    Expr::Identifier(id) => {
-                        for outer in &self.stack
-                        {
-                            for inner in outer
-                            {
-                                if inner.id == *id
-                                {
-                                    ty = inner.ty.ty.clone();
-                                }
-                            }
-                        }
-                    },
-                    Expr::Literal(val) => {
-                        ty = self.map_numeric(val, expected);
-                    },
-                    _ => {}
-                }
+                ty = self.check_expr(expr, expected);
             },
             Value::StringLiteral(_) => {
                 ty = Type::StringLiteral;
@@ -247,6 +230,56 @@ impl Checker {
             Value::IfElse(ifelse) => {
                 ty = self.check_if(ifelse);
             },
+        }
+
+        ty
+    }
+
+    fn check_expr(&mut self, expr: &mut Expr, expected: &Type) -> Type
+    {
+        let mut ty = Type::None;
+
+        match expr {
+            Expr::Identifier(id) => {
+                for outer in &self.stack
+                {
+                    for inner in outer
+                    {
+                        if inner.id == *id
+                        {
+                            ty = inner.ty.ty.clone();
+                        }
+                    }
+                }
+            },
+            Expr::Literal(val) => {
+                ty = self.map_numeric(val, expected);
+            },
+            Expr::Binary(b) | Expr::Boolean(b) => {
+                let l = self.check_val(&mut Value::Expression(b.left().clone()), expected);
+                let r = self.check_val(&mut Value::Expression(b.right().clone()), expected);
+
+                if l != r
+                {
+                    self.rep.add(NyonError::throw(crate::error::Kind::TypeMismatch(l.clone(), r)));
+                }
+
+                ty = l;
+            },
+            Expr::Grouped(expr) => {
+                ty = self.check_expr(expr, expected);
+            },
+            Expr::Unary(u) => {
+                let mut exp = Type::None;
+
+                match u.op() {
+                    crate::lexer::Operator::LNot => { exp = Type::Boolean; }
+                    _ => {} // error?
+                }
+
+                ty = self.check_expr(&mut u.right, &exp);
+            },
+            _ => {}
         }
 
         ty

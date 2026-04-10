@@ -109,6 +109,12 @@ pub enum Operator
     LNot,
     BWOr,  // bit-wise
     BWAnd, // bit-wise
+    Eq,
+    NEq,
+    GE,
+    LE,
+    G,
+    L,
     None
 }
 
@@ -318,6 +324,24 @@ impl Lexer {
         word
     }
 
+    fn read_op(&mut self, next: char) -> String
+    {
+        let mut word: String = String::new();
+
+        let c = self.advance();
+        self.column += 1;
+
+        if self.next() == next
+        {
+            word.push_str(format!("{}{}", c, self.advance()).as_str());
+        }
+        else {
+            word.push(c);
+        }
+
+        word
+    }
+
     fn read_atom(&mut self) -> String
     {
         let mut word: String = String::new();
@@ -442,6 +466,12 @@ impl Lexer {
             "&&" => Token::new(TokenKind::Operator(Operator::LAnd),  &self.file, self.line, self.column - word.len()),
             "|"  => Token::new(TokenKind::Operator(Operator::BWOr),  &self.file, self.line, self.column - word.len()),
             "&"  => Token::new(TokenKind::Operator(Operator::BWAnd), &self.file, self.line, self.column - word.len()),
+            "=="  => Token::new(TokenKind::Operator(Operator::Eq),   &self.file, self.line, self.column - word.len()),
+            "!="  => Token::new(TokenKind::Operator(Operator::NEq),  &self.file, self.line, self.column - word.len()),
+            ">="  => Token::new(TokenKind::Operator(Operator::GE),   &self.file, self.line, self.column - word.len()),
+            "<="  => Token::new(TokenKind::Operator(Operator::LE),   &self.file, self.line, self.column - word.len()),
+            ">"  => Token::new(TokenKind::Operator(Operator::G),     &self.file, self.line, self.column - word.len()),
+            "<"  => Token::new(TokenKind::Operator(Operator::L),     &self.file, self.line, self.column - word.len()),
 
             _ => Token::new(TokenKind::Identifier(word.to_string()), &self.file, self.line, self.column - word.len())
         }
@@ -483,7 +513,7 @@ impl Lexer {
                     word.push(c);
                 }
             },
-            '=' | '+' | '-' | '*' | '/' | ';' | ',' | '(' | ')' | '[' | ']' | '{' | '}' | '\'' => {
+            '+' | '-' | '*' | '/' | ';' | ',' | '(' | ')' | '[' | ']' | '{' | '}' | '\'' => {
                 word.push(self.advance());
             },
             '"' => {
@@ -520,28 +550,22 @@ impl Lexer {
                 }
             },
             '|' => {
-                let c = self.advance();
-                self.column += 1;
-
-                if self.next() == '|'
-                {
-                    word.push_str(format!("{}{}", c, self.advance()).as_str());
-                }
-                else {
-                    word.push(c);
-                }
+                word.push_str(&self.read_op('|'));
             },
             '&' => {
-                let c = self.advance();
-                self.column += 1;
-
-                if self.next() == '&'
-                {
-                    word.push_str(format!("{}{}", c, self.advance()).as_str());
-                }
-                else {
-                    word.push(c);
-                }
+                word.push_str(&self.read_op('&'));
+            },
+            '!' => {
+                word.push_str(&self.read_op('='));
+            },
+            '=' => {
+                word.push_str(&self.read_op('='));
+            },
+            '>' => {
+                word.push_str(&self.read_op('='));
+            },
+            '<' => {
+                word.push_str(&self.read_op('='));
             },
             '#' | '@' | '$' | '_' => {
                 self.rep.add(NyonError::throw(crate::error::Kind::UnknownChar(self.next()))

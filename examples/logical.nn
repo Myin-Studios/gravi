@@ -14,6 +14,13 @@ fun main()
     show(b2);
     show(b3);
 
-    // // Unary
+    var c1 = 3 + 2 != 5;
+
+    if 3 + 2 != 5;
+    {
+        show("Hello!");
+    }
+
+    // Bit-wise
     // mut var u1: bool = a & b; // bit-wise comparison expression
 }

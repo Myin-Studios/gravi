@@ -250,6 +250,7 @@ impl CGenerator {
                     res.push_str(&format!("\t{}{} {} = {};\n",
                         mutable, ty, var.identifier(), self.gen_if_ternary(ifelse)));
                 },
+                Value::Loop(_) => {},
             }
         }
         else {
@@ -369,6 +370,62 @@ impl CGenerator {
                             res.push_str(&self.gen_if(ifelse));
                         },
                         Value::Null => {},
+                        Value::Loop(l) => {
+                            if let Some(cond) = l.cond.clone()
+                            {
+                                let mut start = String::new();
+                                let mut end   = String::new();
+                                let mut is_inclusive = false;
+
+                                if let Some(val) = cond.value()
+                                {
+                                    match val {
+                                        Value::Expression(expr) => {
+                                            match expr {
+                                                Expr::Range(r) => {
+                                                    start = self.gen_expr(r.start());
+                                                    end = self.gen_expr(r.end());
+                                                    is_inclusive = r.inclusive();
+                                                },
+                                                _ => {}
+                                            }
+                                        }
+                                        _ => {} // error?
+                                    }
+                                }
+
+                                let mut s: i32 = start.parse().unwrap_or(0);
+                                let mut e: i32 = end.parse().unwrap_or(0);
+                                
+                                if !is_inclusive
+                                {
+                                    if s < e { e = e - 1; }
+                                    else if e < s { s = s - 1; }
+                                }
+
+                                let id = self.register_var(cond.identifier(), cond.ty().to_owned());
+
+                                if s < e
+                                {
+                                    res.push_str(&format!("\tfor (int {} = {}; {} <= {}; {}++)\n", id, s,
+                                                                                                      id, e,
+                                                                                                      id
+                                                                                                    ));
+                                    res.push_str(&format!("\t{{\n{}\n\t}}\n", self.gen_block(&l.body).0));
+                                }
+                                else {
+                                    res.push_str(&format!("\tfor (int {} = {}; {} >= {}; {}--)\n", id, s,
+                                                                                                      id, e,
+                                                                                                      id
+                                                                                                    ));
+                                    res.push_str(&format!("\t{{\n{}\n\t}}\n", self.gen_block(&l.body).0));
+                                }
+                            }
+                            else {
+                                res.push_str("\twhile (true)\n");
+                                res.push_str(&format!("\t{{\n{}\n\t}}\n", self.gen_block(&l.body).0));
+                            }
+                        },
                     }
                 },
             }
@@ -391,6 +448,7 @@ impl CGenerator {
             Value::Block(_, _)          => res.push_str(&self.inline.pop_front().unwrap_or_default()),
             Value::IfElse(ifelse)       => res.push_str(&self.gen_if_ternary(ifelse)),
             Value::Null                 => {},
+            Value::Loop(_) => {},
         }
 
         res
@@ -488,9 +546,10 @@ impl CGenerator {
                 Value::StringLiteral(s)  => res.push_str(&format!("\"{}\"", s)),
                 Value::Boolean(b)        => res.push_str(if b == &BoolValue::True { "true" } else { "false" }),
                 Value::Call(id, values)  => res.push_str(&format!("nn_{}({})", id, self.gen_call(values))),
-                Value::Null              => {},
-                Value::Block(_, _)       => {},
-                Value::IfElse(_)         => {},
+                Value::Null        => {},
+                Value::Block(_, _) => {},
+                Value::IfElse(_)   => {},
+                Value::Loop(_)     => {},
             }
 
             if i < vals.len() - 1 {
@@ -543,6 +602,7 @@ impl CGenerator {
                 Value::Null        => res.push_str("\"\""),
                 Value::Block(_, _) => {},
                 Value::IfElse(_)   => {},
+                Value::Loop(_)     => {},
             }
         }
 
@@ -566,6 +626,7 @@ impl CGenerator {
             Value::Call(_, _)  => String::new(),
             Value::IfElse(_)   => String::new(),
             Value::Null        => String::new(),
+            Value::Loop(_)     => String::new(),
         };
 
         format!("\treturn {};\n", inner)

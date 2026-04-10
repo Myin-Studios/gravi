@@ -110,6 +110,13 @@ impl IfElse {
 }
 
 #[derive(Debug, Clone)]
+pub struct Loop
+{
+    pub cond: Option<Box<VarDecl>>,
+    pub body: Vec<Items>
+}
+
+#[derive(Debug, Clone)]
 pub enum Value
 {
     Expression(Expr),
@@ -118,6 +125,7 @@ pub enum Value
     Call(String, Vec<Value>),
     Block(Type, Vec<Items>),
     IfElse(IfElse),
+    Loop(Loop),
     Null
 }
 

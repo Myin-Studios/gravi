@@ -230,6 +230,7 @@ impl Checker {
             Value::IfElse(ifelse) => {
                 ty = self.check_if(ifelse);
             },
+            Value::Loop(_) => {}
         }
 
         ty

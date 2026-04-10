@@ -652,6 +652,9 @@ impl Parser {
                             Keyword::If => {
                                 stmts.push(Items::Expr(Value::IfElse(self.parse_if(tokens, false))));
                             },
+                            Keyword::Loop => {
+                                stmts.push(Items::Expr(Value::Loop(self.parse_loop(tokens))));
+                            },
                             _ => {
                                 self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
                                             .file(t.file())
@@ -806,6 +809,74 @@ impl Parser {
         }
 
         IfElse { cond, body, elif, ret: None }
+    }
+
+    fn parse_loop(&mut self, tokens: &mut Vec<Token>) -> Loop
+    {
+        let mut cond: Option<Box<VarDecl>> = None;
+        let mut body: Vec<Items>         = Vec::new();
+
+        let mut index = String::new();
+        let mut val = Value::Null;
+        let mut is_assignment = false;
+
+        loop {
+            if let Some(t) = tokens.last().cloned()
+            {
+                match t.kind() {
+                    TokenKind::Identifier(id) => {
+                        index = id.to_string();
+                        tokens.pop();
+                    },
+                    TokenKind::Keyword(Keyword::In) => {
+                        is_assignment = true;
+                        tokens.pop();
+                    },
+                    TokenKind::Value(_) => {
+                        if is_assignment
+                        {
+                            val = self.parse_value(tokens)
+                        }
+                        else {
+                            // error! value without "in" assignment keyword?!
+                            break;
+                        }
+                    },
+                    TokenKind::Punctuation(Punctuation::LBrace) => {
+                        tokens.pop();
+                        body = self.parse_block(tokens, false);
+                    },
+                    TokenKind::Punctuation(Punctuation::RBrace) => {
+                        tokens.pop();
+                        break;
+                    },
+                    _ => { break; }
+                }
+            }
+            else {
+                break;
+            }
+        }
+        
+        match val.clone() {
+            Value::Expression(_) => {
+                cond = Some(Box::new(VarDecl
+                {
+                    par: Parallelism::None,
+                    mutable: false,
+                    id: index,
+                    ty: Type::Numeric(Numeric::U32),
+                    val: Some(val)
+                }));
+            },
+            _ => {}
+        }
+
+        Loop
+        {
+            cond: cond,
+            body: body
+        }
     }
 
     pub fn reporter(&self) -> &Reporter  { &self.rep }

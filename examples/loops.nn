@@ -1,0 +1,7 @@
+fun main()
+{
+    loop i in 0:10 // indexed loop
+    {
+        show(i);
+    }
+}

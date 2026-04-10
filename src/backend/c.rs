@@ -1,7 +1,5 @@
 use std::collections::VecDeque;
 
-use colored::Colorize;
-
 use crate::{backend::Backend, error::{NyonError, Reporter}, lexer::{Operator, Type}, ast::*};
 
 pub struct CGenerator
@@ -74,9 +72,17 @@ impl CGenerator {
                     {
                         match elem {
                             Items::Var(var) => {
-                                match var.value().as_ref().unwrap_or(&Value::Null) {
-                                    Value::IfElse(ifelse) => {
-                                        res.push_str(&self.pregen_if_ternary(ifelse));
+                                match var {
+                                    Var::Decl(decl) => {
+                                        if let Some(v) = decl.value()
+                                        {
+                                            match v {
+                                                Value::IfElse(_) | Value::Block(_, _) => {
+                                                    res.push_str(&self.pregen_lambda(v));
+                                                },
+                                                _ => {}
+                                            }
+                                        }
                                     },
                                     _ => {}
                                 }
@@ -91,26 +97,37 @@ impl CGenerator {
         res
     }
 
-    fn pregen_if_ternary(&mut self, ifelse: &IfElse) -> String
+    fn pregen_lambda(&mut self, val: &Value) -> String
     {
         let mut res = String::new();
         
-        let ret = self.get_type(ifelse.ret.as_ref().unwrap_or(&Type::None));
-        let mut id = format!("__nn_inline_if{}", self.block_counter);
+        match val {
+            Value::Block(ty, items) => {
+                let mut id = format!("__nn_inline_block{}", self.block_counter);
 
-        self.inline.push_back(id.clone());
+                self.inline.push_back(id.clone());
 
-        res.push_str(&format!("static inline {} {}() {{\n{}\n}}\n", ret, id, self.gen_block(ifelse.body()).0));
+                res.push_str(&format!("static inline {} {}() {{\n{}\n}}\n", self.get_type(ty), id, self.gen_block(items).0));
+            },
+            Value::IfElse(ifelse) => {
+                let ret = self.get_type(ifelse.ret.as_ref().unwrap_or(&Type::None));
+                let mut id = format!("__nn_inline_if{}", self.block_counter);
 
-        if let Some(elif) = ifelse.else_if()
-        {
-            id = format!("__nn_inline_if{}", self.block_counter);
+                self.inline.push_back(id.clone());
 
-            self.inline.push_back(id.clone());
-            
-            res.push_str(&format!("static inline {} {}() {{\n{}\n}}\n", ret, id, self.gen_block(elif.body()).0));
+                res.push_str(&format!("static inline {} {}() {{\n{}\n}}\n", ret, id, self.gen_block(ifelse.body()).0));
+
+                if let Some(elif) = ifelse.else_if()
+                {
+                    id = format!("__nn_inline_if{}", self.block_counter);
+
+                    self.inline.push_back(id.clone());
+                    
+                    res.push_str(&format!("static inline {} {}() {{\n{}\n}}\n", ret, id, self.gen_block(elif.body()).0));
+                }
+            },
+            _ => {}
         }
-        
 
         res
     }
@@ -149,93 +166,98 @@ impl CGenerator {
             "const "
         };
 
-        match var.value().as_ref().unwrap_or(&crate::ast::Value::Null) {
-            Value::Expression(e) => {
-                match e {
-                    crate::ast::Expr::Range(range) => {
-                        let start = match range.start().as_ref() {
-                            crate::ast::Expr::Literal(val) => val.to_string(),
-                            _ => { String::from("0") }
-                        };
-                        let step = match range.step().as_ref().unwrap_or(&Box::new(Expr::Literal("1".to_string()))).as_ref() {
-                            crate::ast::Expr::Literal(val) => val.to_string(),
-                            _ => { String::from("1") }
-                        };
-                        let end = match range.end().as_ref() {
-                            crate::ast::Expr::Literal(val) => val.to_string(),
-                            _ => { String::from("1") }
-                        };
-                        let incl = match range.inclusive() {
-                            true => " + 1",
-                            false => "",
-                        };
-
-                        if start == end
-                        {
-                            res.push_str(format!("\t{} {}[{}];\n", ty, var.identifier(), step).as_str());
-
-                            match par {
-                                Parallelism::CPU => {
-                                    res.push_str("\t#pragma omp parallel for\n");
-                                },
-                                Parallelism::GPU => {},
-                                Parallelism::None => {},
+        if let Some(val) = var.value()
+        {
+            match val {
+                Value::Expression(e) => {
+                    match e {
+                        crate::ast::Expr::Range(range) => {
+                            let start = match range.start().as_ref() {
+                                crate::ast::Expr::Literal(val) => val.to_string(),
+                                _ => { String::from("0") }
+                            };
+                            let step = match range.step().as_ref().unwrap_or(&Box::new(Expr::Literal("1".to_string()))).as_ref() {
+                                crate::ast::Expr::Literal(val) => val.to_string(),
+                                _ => { String::from("1") }
+                            };
+                            let end = match range.end().as_ref() {
+                                crate::ast::Expr::Literal(val) => val.to_string(),
+                                _ => { String::from("1") }
+                            };
+                            let incl = match range.inclusive() {
+                                true => " + 1",
+                                false => "",
                             };
 
-                            res.push_str(format!("\tfor (int i = 0; i < {}; i++) {}\n", step, "{").as_str());
-                            res.push_str(format!("\t\t{}[i] = {};\n", var.identifier(), start).as_str());
-                            res.push_str(format!("\t\tprintf(\"%f\\n\", {}[i]);\n", var.identifier()).as_str());
-                            res.push_str("\t}\n\n");
-                        }
-                        else {
-                            res.push_str(format!("\tint sz_{} = (int)floor(({} - {}) / {}){};\n", var.identifier(), end, start, step, incl).as_str());
-                            res.push_str(format!("\t{}* {} = malloc(sz_{} * sizeof({}));\n", ty, var.identifier(), var.identifier(), ty).as_str());
+                            if start == end
+                            {
+                                res.push_str(format!("\t{} {}[{}];\n", ty, var.identifier(), step).as_str());
+
+                                match par {
+                                    Parallelism::CPU => {
+                                        res.push_str("\t#pragma omp parallel for\n");
+                                    },
+                                    Parallelism::GPU => {},
+                                    Parallelism::None => {},
+                                };
+
+                                res.push_str(format!("\tfor (int i = 0; i < {}; i++) {}\n", step, "{").as_str());
+                                res.push_str(format!("\t\t{}[i] = {};\n", var.identifier(), start).as_str());
+                                res.push_str(format!("\t\tprintf(\"%f\\n\", {}[i]);\n", var.identifier()).as_str());
+                                res.push_str("\t}\n\n");
+                            }
+                            else {
+                                res.push_str(format!("\tint sz_{} = (int)floor(({} - {}) / {}){};\n", var.identifier(), end, start, step, incl).as_str());
+                                res.push_str(format!("\t{}* {} = malloc(sz_{} * sizeof({}));\n", ty, var.identifier(), var.identifier(), ty).as_str());
+                                
+                                match par {
+                                    Parallelism::CPU => {
+                                        res.push_str("\t#pragma omp parallel for\n");
+                                    },
+                                    Parallelism::GPU => {},
+                                    Parallelism::None => {},
+                                };
+                                
+                                res.push_str(format!("\tfor (int i = 0; i < sz_{}; i++) {}\n", var.identifier(), "{").as_str());
+                                res.push_str(format!("\t\t{}[i] = {} + i * {};\n", var.identifier(), start, step).as_str());
+                                res.push_str("\t}\n");
+                            }
                             
-                            match par {
-                                Parallelism::CPU => {
-                                    res.push_str("\t#pragma omp parallel for\n");
-                                },
-                                Parallelism::GPU => {},
-                                Parallelism::None => {},
-                            };
-                            
-                            res.push_str(format!("\tfor (int i = 0; i < sz_{}; i++) {}\n", var.identifier(), "{").as_str());
-                            res.push_str(format!("\t\t{}[i] = {} + i * {};\n", var.identifier(), start, step).as_str());
-                            res.push_str("\t}\n");
+                        },
+                        _ => {
+                            res.push_str(format!("\t{}{} {} = {};\n", mutable, ty, var.identifier(), self.gen_expr(e)).as_str());
                         }
-                        
-                    },
-                    _ => {
-                        res.push_str(format!("\t{}{} {} = {};\n", mutable, ty, var.identifier(), self.gen_expr(e)).as_str());
                     }
                 }
-            }
-            Value::StringLiteral(s) => {
-                res.push_str(format!("\tconst char* {} = \"{}\";\n", var.identifier(), s).as_str());
-            },
-            Value::Boolean(b) => {
-                let bv = if b == &BoolValue::True
-                {
-                    "true"
+                Value::StringLiteral(s) => {
+                    res.push_str(format!("\tconst char* {} = \"{}\";\n", var.identifier(), s).as_str());
+                },
+                Value::Boolean(b) => {
+                    let bv = if b == &BoolValue::True
+                    {
+                        "true"
+                    }
+                    else {
+                        "false"
+                    };
+                    
+                    res.push_str(format!("\t{}bool {} = {};\n", mutable, var.identifier(), bv).as_str());
                 }
-                else {
-                    "false"
-                };
-                
-                res.push_str(format!("\t{}bool {} = {};\n", mutable, var.identifier(), bv).as_str());
-            }
-            Value::Null => {
+                Value::Null => {
 
-            },
-            Value::Call(_, _) => {},
-            Value::Block(items) => {
-                let (val, id) = self.gen_block(items);
-                res.push_str(&format!("{}", val));
-                res.push_str(&format!("\t{}{} {} = {};\n", mutable, ty, var.identifier(), id));
-            },
-            Value::IfElse(ifelse) => {
-                res.push_str(&format!("\t{}{} {} = {};\n", mutable, ty, var.identifier(), self.gen_if_ternary(ifelse)));
-            },
+                },
+                Value::Call(_, _) => {},
+                Value::Block(_, _) => {
+                    let blk = self.inline.pop_front().unwrap_or_default();
+                    res.push_str(&format!("\t{}{} {} = {}();\n", mutable, ty.to_string(), var.identifier(), blk));
+                },
+                Value::IfElse(ifelse) => {
+                    res.push_str(&format!("\t{}{} {} = {};\n", mutable, ty, var.identifier(), self.gen_if_ternary(ifelse)));
+                },
+            }
+        }
+        else {
+            res.push_str(&format!("\t{}{} {};\n", mutable, ty, var.identifier()));
         }
 
         res
@@ -315,13 +337,24 @@ impl CGenerator {
                     res.push_str(&self.gen_ret(val));
                 },
                 Items::Var(v) => {
-                    let mut mangled = v.clone();
-                    mangled.id = self.get_set_mangled(&v.id);
-                    res.push_str(&self.gen_var(&mangled));
+                    match v {
+                        Var::Decl(v) => {
+                            let mut mangled = v.clone();
+                            mangled.id = self.get_set_mangled(&v.id);
+                            res.push_str(&self.gen_var(&mangled));
+                        },
+                        Var::Var(v) => {
+                            if let Some(val) = &v.val
+                            {
+                                let mut mangled = self.get_set_mangled(&v.name);
+                                res.push_str(&format!("\t{} = {};\n", mangled, self.gen_val(val)));
+                            }
+                        }
+                    }
                 },
                 Items::Expr(expr) => {
                     match expr {
-                        Value::Block(_) => {}, // error! block inside another block without any return!
+                        Value::Block(_, _) => {}, // error! block inside another block without any return!
                         Value::Expression(Expr::Identifier(name)) => {
                             id = self.get_set_mangled(name);
                         },
@@ -354,6 +387,23 @@ impl CGenerator {
         self.name_map.truncate(len);
 
         (res, id)
+    }
+
+    fn gen_val(&mut self, val: &Value) -> String
+    {
+        let mut res = String::new();
+
+        match val {
+            Value::Expression(expr) => res.push_str(&self.gen_expr(expr)),
+            Value::StringLiteral(s) => res.push_str(&format!("\"{}\"", s)),
+            Value::Boolean(b) => res.push_str(if b == &BoolValue::True { "true" } else { "false" }),
+            Value::Call(id, vals) => res.push_str(&format!("nn_{}({})", id, self.gen_call(vals))),
+            Value::Block(ty, _) => res.push_str(&self.inline.pop_front().unwrap_or_default()),
+            Value::IfElse(ifelse) => res.push_str(&self.gen_if_ternary(ifelse)),
+            Value::Null => {},
+        }
+
+        res
     }
 
     fn gen_if(&mut self, ifelse: &IfElse) -> String
@@ -471,7 +521,7 @@ impl CGenerator {
                 },
                 Value::Call(id, values) => res.push_str(format!("nn_{}({})", id, self.gen_call(values)).as_str()),
                 Value::Null => res.push_str(""),
-                Value::Block(_) => {}
+                Value::Block(_, _) => {}
                 Value::IfElse(if_else) => {},
             }
 
@@ -504,7 +554,7 @@ impl CGenerator {
                 },
                 Value::Call(id, values) => res.push_str(format!("\"%g\\n\", nn_{}({})", id, self.gen_call(values)).as_str()),
                 Value::Null => res.push_str("\"\""),
-                Value::Block(_) => {}
+                Value::Block(_, _) => {}
                 Value::IfElse(if_else) => {},
             }
         }
@@ -525,7 +575,7 @@ impl CGenerator {
             Value::Expression(expr) => {
                 self.gen_expr(expr)
             },
-            Value::Block(vals) => {
+            Value::Block(_, vals) => {
                 let (inner_res, inner_id) = self.gen_block(vals);
                 inner_res
             },
@@ -541,7 +591,7 @@ impl CGenerator {
             },
             Value::Call(_, _) => "".to_string(),
             Value::Null => "".to_string(),
-            Value::Block(_) => "".to_string(),
+            Value::Block(_, _) => "".to_string(),
             Value::IfElse(if_else) => "".to_string(),
         }).as_str());
 

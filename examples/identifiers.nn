@@ -1,0 +1,28 @@
+fun main()
+{
+    mut var a: i32; // typed declaration, no value
+
+    // some other code
+
+    a = 3;
+    
+    mut var b: i32 = 6; // typed declaration, with value
+
+    // some other code
+
+    b = 9;
+
+    mut var c; // non-typed declaration, no value (type-infered)
+
+    c = 12.5;
+
+    var x = {
+        var z = 1;
+        ret z;
+    }
+
+    var y = {
+        var z = 2;
+        ret z;
+    }
+}

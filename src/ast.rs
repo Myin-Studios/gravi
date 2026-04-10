@@ -18,11 +18,25 @@ pub enum Global
 #[derive(Clone, Debug)]
 pub enum Items
 {
-    Var(VarDecl),
+    Var(Var),
     Ret(Value),
     Lambda(Function),
     Expr(Value),
     None,
+}
+
+#[derive(Clone, Debug)]
+pub enum Var
+{
+    Decl(VarDecl),
+    Var(Variable),
+}
+
+#[derive(Clone, Debug)]
+pub struct Variable
+{
+    pub name: String,
+    pub val: Option<Value>
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -138,7 +152,7 @@ pub enum Value
     StringLiteral(String),
     Boolean(BoolValue),
     Call(String, Vec<Value>),
-    Block(Vec<Items>),
+    Block(Type, Vec<Items>),
     IfElse(IfElse),
     Null
 }

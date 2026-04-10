@@ -145,6 +145,52 @@ impl Parser {
         }
     }
 
+    fn parse_var(&mut self, tokens: &mut Vec<Token>) -> Variable
+    {
+        let id: String = if let Some(t) = tokens.pop()
+        {
+            match t.kind() {
+                TokenKind::Identifier(name) => name.to_string(),
+                _ => "".to_string()
+            }
+        }
+        else {
+            "".to_string()
+        };
+
+        let val = if let Some(t) = tokens.pop()
+        {
+            if t.kind() == &TokenKind::Punctuation(Punctuation::Assignment)
+            {
+                if let Some(val) = tokens.last()
+                {
+                    match val.kind() {
+                        TokenKind::Identifier(_) | TokenKind::Value(_) | TokenKind::Operator(_) => Some(self.parse_value(tokens)),
+                        _ => {
+                            // error!
+                            None
+                        }
+                    }
+                }
+                else {
+                    None
+                }
+            }
+            else {
+                None
+            }
+        }
+        else {
+            None
+        };
+
+        Variable
+        {
+            name: id.to_string(),
+            val
+        }
+    }
+
     fn parse_value(&mut self, tokens: &mut Vec<Token>) -> Value
     {
         let mut val: Value = Value::Null;
@@ -222,7 +268,7 @@ impl Parser {
                         if tokens.last().map(|t| t.kind()) == Some(&TokenKind::Punctuation(Punctuation::RBrace)) {
                             tokens.pop();
                         }
-                        val = Value::Block(block);
+                        val = Value::Block(Type::None, block);
                         break;
                     },
                     TokenKind::Keyword(Keyword::If) => {
@@ -643,7 +689,7 @@ impl Parser {
                                 mutable = true;
                             },
                             Keyword::Var => {
-                                stmts.push(Items::Var(self.parse_var_decl(&par, mutable, tokens)));
+                                stmts.push(Items::Var(Var::Decl(self.parse_var_decl(&par, mutable, tokens))));
                                 par = Parallelism::None;
                                 mutable = false;
                             },
@@ -669,8 +715,12 @@ impl Parser {
                             }
                         }
                     },
+                    TokenKind::Identifier(_) => {
+                        tokens.push(t);
+                        stmts.push(Items::Var(Var::Var(self.parse_var(tokens))));
+                    },
                     TokenKind::Punctuation(Punctuation::LBrace) => {
-                        stmts.push(Items::Expr(Value::Block(self.parse_block(tokens, false))));
+                        stmts.push(Items::Expr(Value::Block(Type::None, self.parse_block(tokens, false))));
 
                         if let Some(next) = tokens.last() {
                             if next.kind() == &TokenKind::Punctuation(Punctuation::RBrace) {
@@ -828,13 +878,11 @@ impl Parser {
 
     pub fn output(&self) -> &Program
     {
-        println!("\n{:#?}", self.prog);
         &self.prog
     }
 
     pub fn output_mut(&mut self) -> &mut Program
     {
-        println!("\n{:#?}", self.prog);
         &mut self.prog
     }
 }

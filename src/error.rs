@@ -35,12 +35,12 @@ pub enum Kind
 }
 
 pub struct NyonError {
-    pub kind:     Kind,
-    pub severity: Severity,
-    pub file:     Option<String>,
-    pub line:     Option<usize>,
-    pub col:      Option<usize>,
-    pub hint:     Option<String>,
+    kind:     Kind,
+    severity: Severity,
+    file:     Option<String>,
+    line:     Option<usize>,
+    col:      Option<usize>,
+    hint:     Option<String>,
 }
 
 impl NyonError {
@@ -104,14 +104,14 @@ impl NyonError {
         };
 
         let msg = self.kind.message();
-        println!("{}! {}", severity, msg.white().bold());
+        eprintln!("{}! {}", severity, msg.white().bold());
 
         if let (Some(file), Some(line), Some(col)) = (&self.file, self.line, self.col) {
-            println!(" {} {}:[{}:{}]", "\tat", file.bright_blue().bold(), line, col);
+            eprintln!(" {} {}:[{}:{}]", "\tat", file.bright_blue().bold(), line, col);
         }
 
         if let Some(hint) = &self.hint {
-            println!("  {} {} {}", "|", "You should...".green().bold(), hint.green());
+            eprintln!("  {} {} {}", "|", "You should...".green().bold(), hint.green());
         }
     }
 }
@@ -125,7 +125,7 @@ impl Kind {
             Kind::UnterminatedString => "You should terminate a string literal!".to_string(),
             Kind::UnterminatedComment => "How long is this comment?!".to_string(),
             Kind::UnknownChar(c) => format!("Hm? {}?", c.to_string().bright_blue().bold()),
-            
+
             Kind::UnexpectedToken(token) => format!("{:#?}\n^ I found this token! Are you sure it's the right one?", token),
             Kind::UnexpectedEOF => format!("Uh! I reached the \"{}\" (End Of File). Did you forget anything back?", "EOF".white().bold()),
             Kind::UnclosedParenthesis => "Where's the end of this call? You surely forgot to close the parenthesis!".to_string(),
@@ -147,9 +147,7 @@ impl Kind {
 
 pub struct Reporter
 {
-    err: Vec<NyonError>,
-    warn: Vec<NyonError>,
-    info: Vec<NyonError>
+    messages: Vec<NyonError>,
 }
 
 impl Reporter {
@@ -157,41 +155,38 @@ impl Reporter {
     {
         Self
         {
-            err: Vec::new(),
-            warn: Vec::new(),
-            info: Vec::new(),
+            messages: Vec::new(),
         }
     }
 
     pub fn add(&mut self, msg: NyonError)
     {
-        match msg.severity {
-            Severity::Fatal | Severity::Error => self.err.push(msg),
-            Severity::Warning => self.warn.push(msg),
-            Severity::Info => self.info.push(msg),
-        }
+        self.messages.push(msg);
     }
 
     pub fn has_errors(&self) -> bool
     {
-        !self.err.is_empty()
+        self.messages.iter().any(|m| matches!(m.severity, Severity::Fatal | Severity::Error))
     }
-    
+
     pub fn fire_all(&self)
     {
-        for err in &self.err
-        {
-            err.fire();
+        for msg in &self.messages {
+            if matches!(msg.severity, Severity::Fatal | Severity::Error) {
+                msg.fire();
+            }
         }
 
-        for warn in &self.warn
-        {
-            warn.fire();
+        for msg in &self.messages {
+            if matches!(msg.severity, Severity::Warning) {
+                msg.fire();
+            }
         }
 
-        for info in &self.info
-        {
-            info.fire();
+        for msg in &self.messages {
+            if matches!(msg.severity, Severity::Info) {
+                msg.fire();
+            }
         }
     }
 }

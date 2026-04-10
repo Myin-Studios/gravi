@@ -1,4 +1,4 @@
-use std::{fs::File, io::Write, path};
+use std::{collections::HashSet, fs::File, io::Write, path};
 
 use colored::Colorize;
 
@@ -11,7 +11,7 @@ pub mod backend;
 pub mod error;
 
 use backend::Backend;
-use codegen::{BackendType, BuildFlag, Generators, Target};
+use codegen::{BackendType, BuildFlag, Target};
 
 fn info()
 {
@@ -28,7 +28,7 @@ fn help()
     println!("    {}", "Build and Run".white().bold());
     println!("    If none of those commands are specified, it's considered a {} {} by default!\n", "debug".white().bold(), "build".white().bold());
     println!("\t{}: It {} and {} the program after build", "-r".bright_blue().bold(), "Builds".white().bold(), "runs".white().bold());
-    
+
     print!("\n");
     println!("    {}", "Target".white().bold());
     println!("    As said above, Nyon compiles for a {} target by default.\n    Note that, in the {} compilation, the generated C code is automatically removed, unlike other target.\n", "debug".white().bold(), "release".white().bold());
@@ -54,98 +54,111 @@ fn clear(all: bool)
         println!("\n{} '{}'...", "Removing".green().bold(), "out".white().bold());
         let _ = std::fs::remove_dir_all("out");
     }
-    else
-    {
+    else {
         println!("\n{} '{}'...", "Cleaning".green().bold(), "out".white().bold());
         let _ = std::fs::remove_dir_all("out");
         let _ = std::fs::create_dir("out");
     }
 }
 
-fn build(input: String, filename: &String, ty: BackendType, target: Target, flag: BuildFlag)
+fn lex(input: &str) -> lexer::Lexer
 {
-    let mut l = lexer::Lexer::new(input.as_str());
+    let mut l = lexer::Lexer::new(input);
     l.process();
+    l
+}
+
+fn parse(tokens: &mut Vec<lexer::Token>) -> parser::Parser
+{
+    let mut p = parser::Parser::new();
+    p.process(tokens);
+    p
+}
+
+fn typecheck(prog: &mut ast::Program) -> typechecker::Checker
+{
+    let mut tc = typechecker::Checker::new();
+    tc.process(prog);
+    tc
+}
+
+fn compile(c_src: &str, filename: &str, ty: &BackendType) -> std::io::Result<std::process::Output>
+{
+    match ty {
+        BackendType::GCC => std::process::Command::new("gcc")
+                                .arg(c_src).arg("-o")
+                                .arg(format!("out/{}.exe", filename))
+                                .arg("-fopenmp")
+                                .output(),
+        BackendType::ZIG => std::process::Command::new("zig")
+                                .arg("cc").arg(c_src).arg("-o")
+                                .arg(format!("out/{}.exe", filename))
+                                .output(),
+        BackendType::LLVM => {
+            eprintln!("warning: LLVM backend is not yet implemented, falling back to GCC");
+            std::process::Command::new("gcc")
+                .arg(c_src).arg("-o")
+                .arg(format!("out/{}.exe", filename))
+                .arg("-fopenmp")
+                .output()
+        }
+    }
+}
+
+fn build(input: String, filename: &str, ty: BackendType, target: Target, flag: BuildFlag)
+{
+    let mut l = lex(input.as_str());
     l.reporter().fire_all();
     if l.reporter().has_errors() { std::process::exit(1); }
 
-    let mut p = parser::Parser::new();
-    p.process(l.tokens_mut());
+    let mut p = parse(l.tokens_mut());
     p.reporter().fire_all();
     if p.reporter().has_errors() { std::process::exit(1); }
 
-    let mut tc = typechecker::Checker::new();
-    tc.process(p.output_mut());
+    let mut tc = typecheck(p.output_mut());
     tc.reporter().fire_all();
     if tc.reporter().has_errors() { std::process::exit(1); }
 
-    let cg = match ty {
-        BackendType::ZIG | BackendType::GCC | BackendType::LLVM /* to be moved in another branch!*/ => {
-            Generators::C(backend::c::CGenerator::new())
+    let mut cg = backend::c::CGenerator::new();
+    cg.process(p.output());
+    cg.reporter().fire_all();
+    if cg.reporter().has_errors() { std::process::exit(1); }
+
+    let _ = std::fs::create_dir("out");
+    let mut f = match File::create("out/out.c") {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("error: Could not create output file: {}", e);
+            std::process::exit(1);
         }
     };
+    let _ = f.write_all(cg.output().as_bytes());
 
-    let output = match cg {
-        Generators::C(mut g) => {
-            g.process(p.output());
-            g.reporter().fire_all();
-            if g.reporter().has_errors() { std::process::exit(1); }
+    let output = compile("out/out.c", filename, &ty);
 
-            let _ = std::fs::create_dir("out");
-            let mut f = File::create("out/out.c").unwrap();
-            let _ = f.write_all(g.output().as_bytes()).unwrap();
-
-            match ty {
-                BackendType::GCC => std::process::Command::new("gcc")
-                                            .arg("out/out.c")
-                                            .arg("-o")
-                                            .arg(format!("out/{}.exe", filename))
-                                            .arg("-fopenmp")
-                                            .output(),
-                BackendType::ZIG => std::process::Command::new("zig")
-                                            .arg("cc")
-                                            .arg("out/out.c")
-                                            .arg("-o")
-                                            .arg(format!("out/{}.exe", filename))
-                                            .output(),
-                BackendType::LLVM => std::process::Command::new("gcc") // it uses GCC by default until LLVM is implemented  
-                                            .arg("out/out.c")
-                                            .arg("-o")
-                                            .arg(format!("out/{}.exe", filename))
-                                            .arg("-fopenmp")
-                                            .output(),
-            }
-        }
-    };
-
-    if target == Target::Release
+    if target == Target::Release && flag != BuildFlag::KeepCode
     {
-        if flag != BuildFlag::KeepCode
-        {
-            let _ = std::fs::remove_file("out/out.c");
-        }
+        let _ = std::fs::remove_file("out/out.c");
     }
 
     let status = match output {
-        Ok(_) => "[SUCCESS]".green().bold(),
+        Ok(_)  => "[SUCCESS]".green().bold(),
         Err(_) => "[FAILURE]".red().bold(),
     };
 
     println!("Compiled with status:\t\t{}", status);
 }
 
-fn run(filename: &String)
+fn run(filename: &str)
 {
-    let output = std::process::Command::new(format!("out/{}.exe", filename).as_str()).output();
-    
+    let output = std::process::Command::new(format!("out/{}.exe", filename)).output();
+
     match output {
-        Ok(out) =>
-        {
+        Ok(out) => {
             println!("\n{} and {} '{}'", "Building".green().bold(), "running".green().bold(), filename.white().bold());
             println!("{}", String::from_utf8(out.stdout).unwrap_or_default());
         }
-        Err(err) =>
-        {
+        Err(err) => {
             println!("\n{} and {} '{}'", "Building".green().bold(), "running".green().bold(), filename.white().bold());
             println!("{}", err.kind());
         }
@@ -155,57 +168,50 @@ fn run(filename: &String)
 fn main()
 {
     let args: Vec<String> = std::env::args().collect();
-    let input = args.iter().find(|s| s.contains(".nn")).unwrap_or(&"".to_string()).to_string();
-    
-    let mut ty = BackendType::GCC;
-    let mut target = Target::Debug;
-    let mut flag = BuildFlag::RemoveCode;
+    let arg_set: HashSet<&str> = args.iter().map(String::as_str).collect();
 
-    if args.contains(&"-h".to_string()) || args.contains(&"-help".to_string())
+    let input = args.iter().find(|s| s.contains(".nn")).cloned().unwrap_or_default();
+
+    let mut ty     = BackendType::GCC;
+    let mut target = Target::Debug;
+    let mut flag   = BuildFlag::RemoveCode;
+
+    if arg_set.contains("-h") || arg_set.contains("-help")
     {
         help();
-
         return;
     }
-    else if args.contains(&"-v".to_string()) || args.contains(&"-version".to_string()) || args.len() < 2 {
+    else if arg_set.contains("-v") || arg_set.contains("-version") || args.len() < 2
+    {
         info();
-
         return;
     }
     else {
-        let mut filename = path::Path::new(input.as_str()).file_name().unwrap_or_default().to_str().unwrap_or_default().to_string();
+        let mut filename = path::Path::new(input.as_str())
+            .file_name().unwrap_or_default()
+            .to_str().unwrap_or_default()
+            .to_string();
         let to_rem = filename.find('.').unwrap_or(filename.len());
-        filename = filename.to_string().drain(..to_rem).collect();
+        filename = filename.drain(..to_rem).collect();
 
-        if args.contains(&"-zig".to_string()) {
+        if arg_set.contains("-zig") {
             ty = BackendType::ZIG;
-        }
-        else if args.contains(&"-llvm".to_string()){
+        } else if arg_set.contains("-llvm") {
             ty = BackendType::LLVM;
         }
 
-        if args.contains(&"-rel".to_string())
-        {
-            target = Target::Release;
-        }
+        if arg_set.contains("-rel")  { target = Target::Release; }
+        if arg_set.contains("-kc")   { flag   = BuildFlag::KeepCode; }
 
-        if args.contains(&"-kc".to_string())
-        {
-            flag = BuildFlag::KeepCode;
-        }
-
-        if args.contains(&"-c".to_string())
-        {
-            clear(false);
-        }
-        else if args.contains(&"-ca".to_string()) {
+        if arg_set.contains("-ca") {
             clear(true);
+        } else if arg_set.contains("-c") {
+            clear(false);
         }
 
         build(input, &filename, ty, target, flag);
 
-        if args.contains(&"-r".to_string())
-        {
+        if arg_set.contains("-r") {
             run(&filename);
         }
     }

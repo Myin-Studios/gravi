@@ -4,11 +4,11 @@ use crate::{backend::Backend, error::{NyonError, Reporter}, lexer::{Operator, Ty
 
 pub struct CGenerator
 {
-    out: String,
-    rep: Reporter,
+    out:           String,
+    rep:           Reporter,
     block_counter: usize,
-    name_map: Vec<(String, String)>,
-    inline: VecDeque<String>,
+    name_map:      Vec<(String, String)>,
+    inline:        VecDeque<String>,
 }
 
 impl CGenerator {
@@ -16,11 +16,11 @@ impl CGenerator {
     {
         Self
         {
-            out: String::new(),
-            rep: Reporter::new(),
+            out:           String::new(),
+            rep:           Reporter::new(),
             block_counter: 0,
-            name_map: Vec::new(),
-            inline: VecDeque::new(),
+            name_map:      Vec::new(),
+            inline:        VecDeque::new(),
         }
     }
 
@@ -29,34 +29,24 @@ impl CGenerator {
         match ty {
             crate::lexer::Type::Numeric(numeric) => {
                 match numeric {
-                    crate::lexer::Numeric::U8 => "unsigned char".to_string(),
+                    crate::lexer::Numeric::U8  => "unsigned char".to_string(),
                     crate::lexer::Numeric::U16 => "unsigned short".to_string(),
                     crate::lexer::Numeric::U32 => "unsigned int".to_string(),
                     crate::lexer::Numeric::U64 => "unsigned long".to_string(),
-                    crate::lexer::Numeric::I8 => "char".to_string(),
+                    crate::lexer::Numeric::I8  => "char".to_string(),
                     crate::lexer::Numeric::I16 => "short".to_string(),
                     crate::lexer::Numeric::I32 => "int".to_string(),
                     crate::lexer::Numeric::I64 => "long".to_string(),
-                    crate::lexer::Numeric::F16 => "float".to_string(), // C doesn't have "half" of a float
+                    crate::lexer::Numeric::F16 => "float".to_string(), // C has no native f16
                     crate::lexer::Numeric::F32 => "float".to_string(),
                     crate::lexer::Numeric::F64 => "double".to_string(),
                 }
             },
-            crate::lexer::Type::StringLiteral => {
-                "char*".to_string()
-            },
-            crate::lexer::Type::Boolean => {
-                "bool".to_string()
-            },
-            crate::lexer::Type::Character => {
-                "char".to_string()
-            },
-            crate::lexer::Type::Custom(c) => {
-                c.to_string()
-            },
-            crate::lexer::Type::None => {
-                "void".to_string()
-            },
+            crate::lexer::Type::StringLiteral => "char*".to_string(),
+            crate::lexer::Type::Boolean       => "bool".to_string(),
+            crate::lexer::Type::Character     => "char".to_string(),
+            crate::lexer::Type::Custom(c)     => c.to_string(),
+            crate::lexer::Type::None          => "void".to_string(),
         }
     }
 
@@ -71,20 +61,15 @@ impl CGenerator {
                     for elem in fun.body()
                     {
                         match elem {
-                            Items::Var(var) => {
-                                match var {
-                                    Var::Decl(decl) => {
-                                        if let Some(v) = decl.value()
-                                        {
-                                            match v {
-                                                Value::IfElse(_) | Value::Block(_, _) => {
-                                                    res.push_str(&self.pregen_lambda(v));
-                                                },
-                                                _ => {}
-                                            }
-                                        }
-                                    },
-                                    _ => {}
+                            Items::Var(Var::Decl(decl)) => {
+                                if let Some(v) = decl.value()
+                                {
+                                    match v {
+                                        Value::IfElse(_) | Value::Block(_, _) => {
+                                            res.push_str(&self.pregen_lambda(v));
+                                        },
+                                        _ => {}
+                                    }
                                 }
                             },
                             _ => {}
@@ -100,30 +85,28 @@ impl CGenerator {
     fn pregen_lambda(&mut self, val: &Value) -> String
     {
         let mut res = String::new();
-        
+
         match val {
             Value::Block(ty, items) => {
-                let mut id = format!("__nn_inline_block{}", self.block_counter);
-
+                let id = format!("__nn_inline_block{}", self.block_counter);
                 self.inline.push_back(id.clone());
-
-                res.push_str(&format!("static inline {} {}() {{\n{}\n}}\n", self.get_type(ty), id, self.gen_block(items).0));
+                res.push_str(&format!("static inline {} {}() {{\n{}\n}}\n",
+                    self.get_type(ty), id, self.gen_block(items).0));
             },
             Value::IfElse(ifelse) => {
                 let ret = self.get_type(ifelse.ret.as_ref().unwrap_or(&Type::None));
-                let mut id = format!("__nn_inline_if{}", self.block_counter);
 
-                self.inline.push_back(id.clone());
-
-                res.push_str(&format!("static inline {} {}() {{\n{}\n}}\n", ret, id, self.gen_block(ifelse.body()).0));
+                let if_id = format!("__nn_inline_if{}", self.block_counter);
+                self.inline.push_back(if_id.clone());
+                res.push_str(&format!("static inline {} {}() {{\n{}\n}}\n",
+                    ret, if_id, self.gen_block(ifelse.body()).0));
 
                 if let Some(elif) = ifelse.else_if()
                 {
-                    id = format!("__nn_inline_if{}", self.block_counter);
-
-                    self.inline.push_back(id.clone());
-                    
-                    res.push_str(&format!("static inline {} {}() {{\n{}\n}}\n", ret, id, self.gen_block(elif.body()).0));
+                    let else_id = format!("__nn_inline_if{}", self.block_counter);
+                    self.inline.push_back(else_id.clone());
+                    res.push_str(&format!("static inline {} {}() {{\n{}\n}}\n",
+                        ret, else_id, self.gen_block(elif.body()).0));
                 }
             },
             _ => {}
@@ -132,22 +115,16 @@ impl CGenerator {
         res
     }
 
-    fn get_set_mangled(&mut self, name: &String) -> String
+    fn get_set_mangled(&mut self, name: &str) -> String
     {
-        let mut id: Option<String> = None;
-
-        id = self.name_map.iter()
-                     .find(|(orig, _)| orig == name)
-                     .map(|(_, mangled)| mangled.clone());
-
-        if id.is_none()
+        if let Some((_, mangled)) = self.name_map.iter().find(|(orig, _)| orig == name)
         {
-            let mangled_name = format!("__b{}_{}", self.block_counter, name);
-            self.name_map.push((name.to_string(), mangled_name.clone()));
-            id = Some(mangled_name);
+            return mangled.clone();
         }
-                     
-        id.unwrap_or(name.clone())
+
+        let mangled = format!("__b{}_{}", self.block_counter, name);
+        self.name_map.push((name.to_string(), mangled.clone()));
+        mangled
     }
 
     fn gen_var(&mut self, var: &VarDecl) -> String
@@ -155,16 +132,9 @@ impl CGenerator {
         let mut res: String = String::new();
 
         let par = var.parallelism();
+        let ty  = self.get_type(var.ty());
 
-        let ty = self.get_type(var.ty());
-        
-        let mutable = if var.mutable()
-        {
-            ""
-        }
-        else {
-            "const "
-        };
+        let mutable = if var.mutable() { "" } else { "const " };
 
         if let Some(val) = var.value()
         {
@@ -172,87 +142,72 @@ impl CGenerator {
                 Value::Expression(e) => {
                     match e {
                         crate::ast::Expr::Range(range) => {
-                            let start = match range.start().as_ref() {
+                            let start = match range.start() {
                                 crate::ast::Expr::Literal(val) => val.to_string(),
-                                _ => { String::from("0") }
+                                _ => String::from("0"),
                             };
-                            let step = match range.step().as_ref().unwrap_or(&Box::new(Expr::Literal("1".to_string()))).as_ref() {
+                            let step = match range.step() {
+                                Some(crate::ast::Expr::Literal(val)) => val.to_string(),
+                                _ => String::from("1"),
+                            };
+                            let end = match range.end() {
                                 crate::ast::Expr::Literal(val) => val.to_string(),
-                                _ => { String::from("1") }
+                                _ => String::from("1"),
                             };
-                            let end = match range.end().as_ref() {
-                                crate::ast::Expr::Literal(val) => val.to_string(),
-                                _ => { String::from("1") }
-                            };
-                            let incl = match range.inclusive() {
-                                true => " + 1",
-                                false => "",
-                            };
+                            let incl = if range.inclusive() { " + 1" } else { "" };
 
                             if start == end
                             {
-                                res.push_str(format!("\t{} {}[{}];\n", ty, var.identifier(), step).as_str());
+                                res.push_str(&format!("\t{} {}[{}];\n", ty, var.identifier(), step));
 
                                 match par {
-                                    Parallelism::CPU => {
-                                        res.push_str("\t#pragma omp parallel for\n");
-                                    },
-                                    Parallelism::GPU => {},
-                                    Parallelism::None => {},
+                                    Parallelism::CPU => res.push_str("\t#pragma omp parallel for\n"),
+                                    _ => {}
                                 };
 
-                                res.push_str(format!("\tfor (int i = 0; i < {}; i++) {}\n", step, "{").as_str());
-                                res.push_str(format!("\t\t{}[i] = {};\n", var.identifier(), start).as_str());
-                                res.push_str(format!("\t\tprintf(\"%f\\n\", {}[i]);\n", var.identifier()).as_str());
+                                res.push_str(&format!("\tfor (int i = 0; i < {}; i++) {{\n", step));
+                                res.push_str(&format!("\t\t{}[i] = {};\n", var.identifier(), start));
+                                res.push_str(&format!("\t\tprintf(\"%f\\n\", {}[i]);\n", var.identifier()));
                                 res.push_str("\t}\n\n");
                             }
                             else {
-                                res.push_str(format!("\tint sz_{} = (int)floor(({} - {}) / {}){};\n", var.identifier(), end, start, step, incl).as_str());
-                                res.push_str(format!("\t{}* {} = malloc(sz_{} * sizeof({}));\n", ty, var.identifier(), var.identifier(), ty).as_str());
-                                
+                                res.push_str(&format!("\tint sz_{} = (int)floor(({} - {}) / {}){};\n",
+                                    var.identifier(), end, start, step, incl));
+                                res.push_str(&format!("\t{}* {} = malloc(sz_{} * sizeof({}));\n",
+                                    ty, var.identifier(), var.identifier(), ty));
+
                                 match par {
-                                    Parallelism::CPU => {
-                                        res.push_str("\t#pragma omp parallel for\n");
-                                    },
-                                    Parallelism::GPU => {},
-                                    Parallelism::None => {},
+                                    Parallelism::CPU => res.push_str("\t#pragma omp parallel for\n"),
+                                    _ => {}
                                 };
-                                
-                                res.push_str(format!("\tfor (int i = 0; i < sz_{}; i++) {}\n", var.identifier(), "{").as_str());
-                                res.push_str(format!("\t\t{}[i] = {} + i * {};\n", var.identifier(), start, step).as_str());
+
+                                res.push_str(&format!("\tfor (int i = 0; i < sz_{}; i++) {{\n", var.identifier()));
+                                res.push_str(&format!("\t\t{}[i] = {} + i * {};\n", var.identifier(), start, step));
                                 res.push_str("\t}\n");
                             }
-                            
                         },
                         _ => {
-                            res.push_str(format!("\t{}{} {} = {};\n", mutable, ty, var.identifier(), self.gen_expr(e)).as_str());
+                            res.push_str(&format!("\t{}{} {} = {};\n",
+                                mutable, ty, var.identifier(), self.gen_expr(e)));
                         }
                     }
-                }
+                },
                 Value::StringLiteral(s) => {
-                    res.push_str(format!("\tconst char* {} = \"{}\";\n", var.identifier(), s).as_str());
+                    res.push_str(&format!("\tconst char* {} = \"{}\";\n", var.identifier(), s));
                 },
                 Value::Boolean(b) => {
-                    let bv = if b == &BoolValue::True
-                    {
-                        "true"
-                    }
-                    else {
-                        "false"
-                    };
-                    
-                    res.push_str(format!("\t{}bool {} = {};\n", mutable, var.identifier(), bv).as_str());
-                }
-                Value::Null => {
-
+                    let bv = if b == &BoolValue::True { "true" } else { "false" };
+                    res.push_str(&format!("\t{}bool {} = {};\n", mutable, var.identifier(), bv));
                 },
+                Value::Null => {},
                 Value::Call(_, _) => {},
                 Value::Block(_, _) => {
                     let blk = self.inline.pop_front().unwrap_or_default();
-                    res.push_str(&format!("\t{}{} {} = {}();\n", mutable, ty.to_string(), var.identifier(), blk));
+                    res.push_str(&format!("\t{}{} {} = {}();\n", mutable, ty, var.identifier(), blk));
                 },
                 Value::IfElse(ifelse) => {
-                    res.push_str(&format!("\t{}{} {} = {};\n", mutable, ty, var.identifier(), self.gen_if_ternary(ifelse)));
+                    res.push_str(&format!("\t{}{} {} = {};\n",
+                        mutable, ty, var.identifier(), self.gen_if_ternary(ifelse)));
                 },
             }
         }
@@ -266,69 +221,60 @@ impl CGenerator {
     fn gen_expr(&mut self, expr: &Expr) -> String
     {
         let mut res: String = String::new();
-        
+
         match expr {
             Expr::Identifier(id) => res = self.get_set_mangled(id),
-            Expr::Literal(val) => res = val.to_string(),
+            Expr::Literal(val)   => res = val.to_string(),
             Expr::Binary(b) => {
-                let op = match b.op()
-                {
+                let op = match b.op() {
                     Operator::Add => "+",
                     Operator::Sub => "-",
                     Operator::Mul => "*",
                     Operator::Div => "/",
-                    _ => "" // unsupported operator
+                    _ => ""
                 };
-                
                 let l = self.gen_expr(b.left());
                 let r = self.gen_expr(b.right());
-
                 res = format!("{} {} {}", l, op, r);
             },
             Expr::Grouped(e) => {
                 res = format!("({})", self.gen_expr(e));
             },
             Expr::Boolean(b) => {
-                let op = match b.op()
-                {
+                let op = match b.op() {
                     Operator::LAnd => "&&",
-                    Operator::LOr => "||",
-                    _ => "" // unsupported operator
+                    Operator::LOr  => "||",
+                    _ => ""
                 };
-                
                 let l = self.gen_expr(b.left());
                 let r = self.gen_expr(b.right());
-
                 res = format!("{} {} {}", l, op, r);
             },
             Expr::Unary(u) => {
-                let op = match u.op()
-                {
+                let op = match u.op() {
                     Operator::LNot => "!",
-                    Operator::Sub => "-",
-                    _ => "" // unsupported operator
+                    Operator::Sub  => "-",
+                    _ => ""
                 };
-                
                 let r = self.gen_expr(u.right());
-
                 res = format!("{}{}", op, r);
             },
             _ => {
                 self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedExpression)
-                                        .hint("Try writing a valid expression, like:\n\t- a binary expression: \"val1 op val2\"\n\t- a grouped expression \"(val1 op val2)\"\n\t- a boolean expression: \"a || b\" or \"a && b\"\n\t- a range: \"start:step:end\" (exclusive) or \"start:step::end\" (inclusive)\n\t- an identifier: named variable\n\t- a numeric literal: 1, 2, ... n or 1.x, 2.x, ..., n.x"));
+                    .hint("Try writing a valid expression, like:\n\t- a binary expression: \"val1 op val2\"\n\t- a grouped expression \"(val1 op val2)\"\n\t- a boolean expression: \"a || b\" or \"a && b\"\n\t- a range: \"start:step:end\" (exclusive) or \"start:step::end\" (inclusive)\n\t- an identifier: named variable\n\t- a numeric literal: 1, 2, ... n or 1.x, 2.x, ..., n.x"));
             }
         };
 
         res
     }
 
-    fn gen_block(&mut self, items: &Vec<Items>) -> (String, String)
+    fn gen_block(&mut self, items: &[Items]) -> (String, String)
     {
         let len = self.name_map.len();
         self.block_counter += 1;
 
         let mut res = String::new();
-        let mut id = String::new();
+        let mut id  = String::new();
 
         for item in items
         {
@@ -346,7 +292,7 @@ impl CGenerator {
                         Var::Var(v) => {
                             if let Some(val) = &v.val
                             {
-                                let mut mangled = self.get_set_mangled(&v.name);
+                                let mangled = self.get_set_mangled(&v.name);
                                 res.push_str(&format!("\t{} = {};\n", mangled, self.gen_val(val)));
                             }
                         }
@@ -354,7 +300,7 @@ impl CGenerator {
                 },
                 Items::Expr(expr) => {
                     match expr {
-                        Value::Block(_, _) => {}, // error! block inside another block without any return!
+                        Value::Block(_, _) => {}, // block without return — nothing to emit
                         Value::Expression(Expr::Identifier(name)) => {
                             id = self.get_set_mangled(name);
                         },
@@ -363,24 +309,21 @@ impl CGenerator {
                         },
                         Value::StringLiteral(s) => id = s.to_string(),
                         Value::Boolean(b) => {
-                            if b == &BoolValue::True { id = "true".to_string() } else {id = "false".to_string(); }
+                            id = if b == &BoolValue::True { "true".to_string() } else { "false".to_string() };
                         },
                         Value::Call(call_id, vals) => {
-                            if call_id == "show"
-                            {
+                            if call_id == "show" {
                                 res.push_str(&self.gen_show(vals));
-                            }
-                            else {
-                                res = format!("\tnn_{}({});\n", call_id, self.gen_call(vals));
+                            } else {
+                                res.push_str(&format!("\tnn_{}({});\n", call_id, self.gen_call(vals)));
                             }
                         },
                         Value::IfElse(ifelse) => {
-                            res.push_str(&self.gen_if(&ifelse));
-                        }
+                            res.push_str(&self.gen_if(ifelse));
+                        },
                         Value::Null => {},
                     }
                 },
-                _ => {}
             }
         }
 
@@ -394,13 +337,13 @@ impl CGenerator {
         let mut res = String::new();
 
         match val {
-            Value::Expression(expr) => res.push_str(&self.gen_expr(expr)),
-            Value::StringLiteral(s) => res.push_str(&format!("\"{}\"", s)),
-            Value::Boolean(b) => res.push_str(if b == &BoolValue::True { "true" } else { "false" }),
-            Value::Call(id, vals) => res.push_str(&format!("nn_{}({})", id, self.gen_call(vals))),
-            Value::Block(ty, _) => res.push_str(&self.inline.pop_front().unwrap_or_default()),
-            Value::IfElse(ifelse) => res.push_str(&self.gen_if_ternary(ifelse)),
-            Value::Null => {},
+            Value::Expression(expr)     => res.push_str(&self.gen_expr(expr)),
+            Value::StringLiteral(s)     => res.push_str(&format!("\"{}\"", s)),
+            Value::Boolean(b)           => res.push_str(if b == &BoolValue::True { "true" } else { "false" }),
+            Value::Call(id, vals)       => res.push_str(&format!("nn_{}({})", id, self.gen_call(vals))),
+            Value::Block(_, _)          => res.push_str(&self.inline.pop_front().unwrap_or_default()),
+            Value::IfElse(ifelse)       => res.push_str(&self.gen_if_ternary(ifelse)),
+            Value::Null                 => {},
         }
 
         res
@@ -418,32 +361,25 @@ impl CGenerator {
         if let Some(elif) = ifelse.else_if()
         {
             res.push_str("\telse ");
-            
-            if elif.condition().is_some()
-            {
+
+            if elif.condition().is_some() {
                 res.push_str(&self.gen_if(elif));
-            }
-            else {
+            } else {
                 res.push_str("\n\t{\n");
                 res.push_str(&format!("\t{}", self.gen_block(elif.body()).0));
                 res.push_str("\n\t}\n");
             }
         }
-        
+
         res
     }
 
     fn gen_if_ternary(&mut self, ifelse: &IfElse) -> String
     {
-        let mut res = String::new();
-        
-        res.push_str(&format!("({}) ? {}() : {}()",
-                                    self.gen_expr(ifelse.condition().as_ref().unwrap_or(&Expr::Null)),
-                                    self.inline.pop_front().unwrap_or(String::new()),
-                                    self.inline.pop_front().unwrap_or(String::new()
-                                )));
-        
-        res
+        format!("({}) ? {}() : {}()",
+            self.gen_expr(ifelse.condition().as_ref().unwrap_or(&Expr::Null)),
+            self.inline.pop_front().unwrap_or_default(),
+            self.inline.pop_front().unwrap_or_default())
     }
 
     fn gen_fun(&mut self, fun: &Function) -> String
@@ -451,82 +387,66 @@ impl CGenerator {
         let mut res: String = String::new();
 
         let ret = if fun.main() { "int".to_string() } else { self.get_type(fun.ret()) };
-        let id = if fun.identifier() == "main" { "main".to_string() } else {
-            let mut i = String::from("nn_");
-            i.push_str(fun.identifier());
-            i
+        let id  = if fun.identifier() == "main" {
+            "main".to_string()
+        } else {
+            format!("nn_{}", fun.identifier())
         };
-        
-        let mut params: String = String::new();
+
+        let mut params = String::new();
 
         if !fun.main()
         {
             for i in 0..fun.params().len()
             {
-                let m = if fun.params()[i].mutable() { "" } else { "const " };
-                let t = self.get_type(&fun.params()[i].ty());
-                let id = fun.params()[i].identifier();
-                let v = fun.params()[i].value();
+                let m   = if fun.params()[i].mutable() { "" } else { "const " };
+                let t   = self.get_type(fun.params()[i].ty());
+                let pid = fun.params()[i].identifier();
+                let v   = fun.params()[i].value();
 
-                if v.is_none() // C doesn't supports default values
+                if v.is_none() // C doesn't support default values
                 {
-                    if i == fun.params().len() - 1
-                    {
-                        params.push_str(format!(" {}{} {}", m, t, id).as_str());
-                    }
-                    else {
-                        params.push_str(format!("{}{} {},", m, t, id).as_str());
+                    if i == fun.params().len() - 1 {
+                        params.push_str(&format!(" {}{} {}", m, t, pid));
+                    } else {
+                        params.push_str(&format!("{}{} {},", m, t, pid));
                     }
                 }
             }
-        } // if main: ignored parameters for now
+        }
 
         let body = if fun.body().is_empty()
         {
             ";".to_string()
         } else {
             let mut bd = " {\n\n".to_string();
-
             bd.push_str(&self.gen_block(fun.body()).0);
-            
             bd.push_str("\n}");
-            
             bd
         };
 
-        res.push_str(format!("{} {}({}){}\n\n", ret, id, params, body).as_str());
+        res.push_str(&format!("{} {}({}){}\n\n", ret, id, params, body));
 
         res
     }
 
-    fn gen_call(&mut self, vals: &Vec<Value>) -> String
+    fn gen_call(&mut self, vals: &[Value]) -> String
     {
         let mut res: String = String::new();
 
-        for (i, val) in vals.into_iter().enumerate()
+        for (i, val) in vals.iter().enumerate()
         {
             match val {
-                Value::Expression(expr) => res.push_str(self.gen_expr(expr).as_str()),
-                Value::StringLiteral(s) => res.push_str(format!("\"{}\"", s).as_str()),
-                Value::Boolean(b) => {
-                    res.push_str(
-                        if b == &BoolValue::True
-                        {
-                            "true"
-                        }
-                        else {
-                            "false"
-                        }
-                    );
-                },
-                Value::Call(id, values) => res.push_str(format!("nn_{}({})", id, self.gen_call(values)).as_str()),
-                Value::Null => res.push_str(""),
-                Value::Block(_, _) => {}
-                Value::IfElse(if_else) => {},
+                Value::Expression(expr)  => res.push_str(&self.gen_expr(expr)),
+                Value::StringLiteral(s)  => res.push_str(&format!("\"{}\"", s)),
+                Value::Boolean(b)        => res.push_str(if b == &BoolValue::True { "true" } else { "false" }),
+                Value::Call(id, values)  => res.push_str(&format!("nn_{}({})", id, self.gen_call(values))),
+                Value::Null              => {},
+                Value::Block(_, _)       => {},
+                Value::IfElse(_)         => {},
             }
 
-            if i < vals.len() - 1
-            {
+            if i < vals.len() - 1 {
                 res.push_str(", ");
             }
         }
@@ -534,70 +454,51 @@ impl CGenerator {
         res
     }
 
-    fn gen_show(&mut self, vals: &Vec<Value>) -> String
+    fn gen_show(&mut self, vals: &[Value]) -> String
     {
         let mut res: String = String::from("\tprintf(");
 
         for val in vals
         {
             match val {
-                Value::Expression(expr) => res.push_str(format!("\"%g\\n\", {}", self.gen_expr(expr)).as_str()),
-                Value::StringLiteral(s) => res.push_str(format!("\"%s\\n\", \"{}\"", s).as_str()),
+                Value::Expression(expr) => res.push_str(&format!("\"%g\\n\", {}", self.gen_expr(expr))),
+                Value::StringLiteral(s) => res.push_str(&format!("\"%s\\n\", \"{}\"", s)),
                 Value::Boolean(b) => {
-                    if b == &BoolValue::True
-                    {
-                        res.push_str(format!("\"%s\\n\", \"true\"").as_str())
-                    }
-                    else {
-                        res.push_str(format!("\"%s\\n\", \"false\"").as_str())
-                    }
+                    let bstr = if b == &BoolValue::True { "true" } else { "false" };
+                    res.push_str(&format!("\"%s\\n\", \"{}\"", bstr));
                 },
-                Value::Call(id, values) => res.push_str(format!("\"%g\\n\", nn_{}({})", id, self.gen_call(values)).as_str()),
-                Value::Null => res.push_str("\"\""),
-                Value::Block(_, _) => {}
-                Value::IfElse(if_else) => {},
+                Value::Call(id, values) => res.push_str(&format!("\"%g\\n\", nn_{}({})", id, self.gen_call(values))),
+                Value::Null             => res.push_str("\"\""),
+                Value::Block(_, _)      => {},
+                Value::IfElse(_)        => {},
             }
         }
 
         res.push_str(");\n");
-
         res
     }
 
     fn gen_ret(&mut self, val: &Value) -> String
     {
-        let mut res: String = String::new();
-
-        res.push_str(format!("\treturn {};\n", match val {
-            Value::Expression(Expr::Identifier(name)) => {
-                self.get_set_mangled(name)
-            },
-            Value::Expression(expr) => {
-                self.gen_expr(expr)
-            },
+        let inner = match val {
+            Value::Expression(Expr::Identifier(name)) => self.get_set_mangled(name),
+            Value::Expression(expr)                   => self.gen_expr(expr),
             Value::Block(_, vals) => {
-                let (inner_res, inner_id) = self.gen_block(vals);
-                inner_res
+                let (_, inner_id) = self.gen_block(vals);
+                inner_id
             },
-            Value::StringLiteral(str) => format!("\"{}\"", str.to_string()),
+            Value::StringLiteral(s) => format!("\"{}\"", s),
             Value::Boolean(b) => {
-                if b == &BoolValue::True
-                {
-                    "true".to_string()
-                }
-                else {
-                    "false".to_string()
-                }
+                if b == &BoolValue::True { "true".to_string() } else { "false".to_string() }
             },
-            Value::Call(_, _) => "".to_string(),
-            Value::Null => "".to_string(),
-            Value::Block(_, _) => "".to_string(),
-            Value::IfElse(if_else) => "".to_string(),
-        }).as_str());
+            Value::Call(_, _)  => String::new(),
+            Value::IfElse(_)   => String::new(),
+            Value::Null        => String::new(),
+        };
 
-        res
+        format!("\treturn {};\n", inner)
     }
-    
+
     pub fn reporter(&self) -> &Reporter
     {
         &self.rep
@@ -614,40 +515,25 @@ impl Backend for CGenerator {
         let preprocessed = self.preprocess(prog);
         self.out.push_str(&preprocessed);
 
-        let mut temp: String = String::new();
-        let mut is_main: bool = false;
+        let mut is_main = false;
 
         for item in prog.items()
         {
             match item {
-                crate::ast::Global::Fun(fun) => {
+                Global::Fun(fun) => {
                     is_main = fun.main();
-
                     let s = self.gen_fun(fun);
-                    self.out.push_str(s.as_str());
+                    self.out.push_str(&s);
                 },
             }
         }
 
         if !is_main
         {
-            if !temp.is_empty()
-            {
-                // error! unsupported global variables!
-                
-                self.out.push_str("int main()\n{\n");
-                self.out.push_str("\treturn 0;\n");
-                self.out.push_str("}\n");
-
-                return;
-            }
-
             self.out.push_str("int main()\n{\n");
-            self.out.push_str(&temp);
             self.out.push_str("\treturn 0;\n");
             self.out.push_str("}\n");
         }
-        
     }
 
     fn output(&self) -> &String

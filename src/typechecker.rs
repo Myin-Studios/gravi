@@ -4,7 +4,8 @@ use crate::{error::{NyonError, Reporter}, lexer::Type};
 #[derive(Clone, Debug)]
 pub struct TypeInfo
 {
-    ty: Type,
+    ty:      Type,
+    #[allow(dead_code)]
     mutable: bool
 }
 
@@ -18,18 +19,17 @@ pub struct SymbolInfo
 impl SymbolInfo {
     pub fn new(k: String, v: TypeInfo) -> Self
     {
-        Self
-        {
-            id: k,
-            ty: v
-        }
+        Self { id: k, ty: v }
     }
 }
+
+/// Distinguishes how numeric bounds should be parsed in `in_range`.
+enum NumericKind { Unsigned, Signed, Float }
 
 pub struct Checker
 {
     stack: Vec<Vec<SymbolInfo>>,
-    rep: Reporter,
+    rep:   Reporter,
 }
 
 impl Checker {
@@ -38,7 +38,7 @@ impl Checker {
         Self
         {
             stack: Vec::new(),
-            rep: Reporter::new(),
+            rep:   Reporter::new(),
         }
     }
 
@@ -53,7 +53,7 @@ impl Checker {
                         SymbolInfo::new(fun.identifier().to_string(),
                         TypeInfo
                         {
-                            ty: fun.ret().to_owned(),
+                            ty:      fun.ret().to_owned(),
                             mutable: false,
                         })
                     );
@@ -66,28 +66,24 @@ impl Checker {
         }
     }
 
-    fn has(&self, what: &String) -> Option<&SymbolInfo>
+    fn has(&self, what: &str) -> Option<&SymbolInfo>
     {
-        let mut sym = None;
         for symbols in &self.stack
         {
-            sym = symbols.iter().find(|s| s.id == *what)
-            .map(|s| s);
-
-            if sym.is_some()
+            if let Some(s) = symbols.iter().find(|s| s.id == what)
             {
-                break;
+                return Some(s);
             }
         }
 
-        sym
+        None
     }
 
-    fn set_type(&mut self, name: &String, ty: Type)
+    fn set_type(&mut self, name: &str, ty: Type)
     {
         for symbols in &mut self.stack
         {
-            if let Some(s) = symbols.iter_mut().find(|s| s.id == *name)
+            if let Some(s) = symbols.iter_mut().find(|s| s.id == name)
             {
                 s.ty.ty = ty;
                 return;
@@ -97,26 +93,34 @@ impl Checker {
 
     fn check_fun(&mut self, fun: &mut Function)
     {
+        // Push all parameters into a single scope level
+        let mut param_scope: Vec<SymbolInfo> = Vec::new();
         for param in fun.params()
         {
-            let mut map = Vec::new();
-            map.push(SymbolInfo::new(
+            param_scope.push(SymbolInfo::new(
                 param.identifier().to_string(),
                 TypeInfo
                 {
-                    ty: param.ty().to_owned(),
+                    ty:      param.ty().to_owned(),
                     mutable: param.mutable()
                 }
             ));
-
-            self.stack.push(map);
+        }
+        if !param_scope.is_empty()
+        {
+            self.stack.push(param_scope);
         }
 
         self.stack.push(Vec::new());
         self.check_body(&mut fun.body);
         self.stack.pop();
+
+        if !fun.params().is_empty()
+        {
+            self.stack.pop();
+        }
     }
-    
+
     fn check_body(&mut self, items: &mut Vec<Items>) -> Type
     {
         let mut ty = Type::None;
@@ -135,7 +139,7 @@ impl Checker {
                                 {
                                     ty = self.check_val(val, &ty);
                                 }
-                                
+
                                 v.ty = ty.clone();
                             }
                             else
@@ -149,14 +153,14 @@ impl Checker {
                                     }
                                 }
                             }
-                            
+
                             if let Some(last) = self.stack.last_mut()
                             {
                                 last.push(SymbolInfo::new(
                                     v.identifier().to_string(),
                                     TypeInfo
                                     {
-                                        ty: v.ty().to_owned(),
+                                        ty:      v.ty().to_owned(),
                                         mutable: v.mutable()
                                     })
                                 );
@@ -210,25 +214,19 @@ impl Checker {
             Value::Expression(expr) => {
                 match expr {
                     Expr::Identifier(id) => {
-                        for outer in self.stack.clone()
+                        for outer in &self.stack
                         {
                             for inner in outer
                             {
-                                if inner.id == id.to_string()
+                                if inner.id == *id
                                 {
-                                    ty = inner.ty.ty;
+                                    ty = inner.ty.ty.clone();
                                 }
                             }
                         }
                     },
                     Expr::Literal(val) => {
-                        if ty == Type::None
-                        {
-                            ty = self.map_numeric(val, expected);
-                        }
-                        else if ty != self.map_numeric(val, &ty) {
-                            // error!
-                        }
+                        ty = self.map_numeric(val, expected);
                     },
                     _ => {}
                 }
@@ -237,7 +235,7 @@ impl Checker {
                 ty = Type::StringLiteral;
             },
             Value::Boolean(_) => ty = Type::Boolean,
-            Value::Call(_, values) => {},
+            Value::Call(_, _values) => {},
             Value::Null => ty = Type::None,
             Value::Block(bty, b) => {
                 self.stack.push(Vec::new());
@@ -250,44 +248,44 @@ impl Checker {
                 ty = self.check_if(ifelse);
             },
         }
-        
+
         ty
     }
 
-    fn map_numeric(&self, val: &String, expected: &Type) -> Type
+    fn map_numeric(&self, val: &str, expected: &Type) -> Type
     {
         let mut ty = Type::None;
 
         if expected == &Type::None
         {
-            ty = if self.in_range(val, "0", "255", 0) { Type::Numeric(crate::lexer::Numeric::U8) }
-                 else if self.in_range(val, "0", "64535", 0) { Type::Numeric(crate::lexer::Numeric::U16) }
-                 else if self.in_range(val, "0", "4294967295", 0) { Type::Numeric(crate::lexer::Numeric::U32) }
-                 else if self.in_range(val, "0", "18446744073709551615", 0) { Type::Numeric(crate::lexer::Numeric::U64) }
-                 else if self.in_range(val, "-128", "127", 1) { Type::Numeric(crate::lexer::Numeric::I8) }
-                 else if self.in_range(val, "-32768", "32767",1) { Type::Numeric(crate::lexer::Numeric::I16) }
-                 else if self.in_range(val, "-2147483648", "2147483647",1) { Type::Numeric(crate::lexer::Numeric::I32) }
-                 else if self.in_range(val, "-9223372036854775808", "9223372036854775807",1) { Type::Numeric(crate::lexer::Numeric::I64) }
-                 else if self.in_range(val, "-65.504", "-65.504", 2) { Type::Numeric(crate::lexer::Numeric::I16) }
-                 else if self.in_range(val, "-3.4e38", "3.4e38", 2) { Type::Numeric(crate::lexer::Numeric::F32) }
-                 else if self.in_range(val, "-1.8e308", "1.8e308", 2) { Type::Numeric(crate::lexer::Numeric::F64) }
+            ty = if self.in_range(val, "0", "255", NumericKind::Unsigned)                             { Type::Numeric(crate::lexer::Numeric::U8) }
+                 else if self.in_range(val, "0", "65535", NumericKind::Unsigned)                      { Type::Numeric(crate::lexer::Numeric::U16) }
+                 else if self.in_range(val, "0", "4294967295", NumericKind::Unsigned)                 { Type::Numeric(crate::lexer::Numeric::U32) }
+                 else if self.in_range(val, "0", "18446744073709551615", NumericKind::Unsigned)        { Type::Numeric(crate::lexer::Numeric::U64) }
+                 else if self.in_range(val, "-128", "127", NumericKind::Signed)                       { Type::Numeric(crate::lexer::Numeric::I8) }
+                 else if self.in_range(val, "-32768", "32767", NumericKind::Signed)                   { Type::Numeric(crate::lexer::Numeric::I16) }
+                 else if self.in_range(val, "-2147483648", "2147483647", NumericKind::Signed)         { Type::Numeric(crate::lexer::Numeric::I32) }
+                 else if self.in_range(val, "-9223372036854775808", "9223372036854775807", NumericKind::Signed) { Type::Numeric(crate::lexer::Numeric::I64) }
+                 else if self.in_range(val, "-65504.0", "65504.0", NumericKind::Float)                { Type::Numeric(crate::lexer::Numeric::F16) }
+                 else if self.in_range(val, "-3.4e38", "3.4e38", NumericKind::Float)                  { Type::Numeric(crate::lexer::Numeric::F32) }
+                 else if self.in_range(val, "-1.8e308", "1.8e308", NumericKind::Float)                { Type::Numeric(crate::lexer::Numeric::F64) }
                  else { Type::None }
         }
 
         match expected {
             Type::Numeric(num) => {
                 ty = match num {
-                    crate::lexer::Numeric::U8 if self.in_range(val, "0", "255", 0) => Type::Numeric(crate::lexer::Numeric::U8),
-                    crate::lexer::Numeric::U16 if self.in_range(val, "0", "64535", 0) => Type::Numeric(crate::lexer::Numeric::U16),
-                    crate::lexer::Numeric::U32 if self.in_range(val, "0", "4294967295", 0) => Type::Numeric(crate::lexer::Numeric::U32),
-                    crate::lexer::Numeric::U64 if self.in_range(val, "0", "18446744073709551615", 0) => Type::Numeric(crate::lexer::Numeric::U64),
-                    crate::lexer::Numeric::I8 if self.in_range(val, "-128", "127", 1) => Type::Numeric(crate::lexer::Numeric::I8),
-                    crate::lexer::Numeric::I16 if self.in_range(val, "-32768", "32767",1) => Type::Numeric(crate::lexer::Numeric::I16),
-                    crate::lexer::Numeric::I32 if self.in_range(val, "-2147483648", "2147483647",1) => Type::Numeric(crate::lexer::Numeric::I32),
-                    crate::lexer::Numeric::I64 if self.in_range(val, "-9223372036854775808", "9223372036854775807",1) => Type::Numeric(crate::lexer::Numeric::I64),
-                    crate::lexer::Numeric::F16 if self.in_range(val, "-65.504", "-65.504", 2) => Type::Numeric(crate::lexer::Numeric::I16),
-                    crate::lexer::Numeric::F32 if self.in_range(val, "-3.4e38", "3.4e38", 2) => Type::Numeric(crate::lexer::Numeric::F32),
-                    crate::lexer::Numeric::F64 if self.in_range(val, "-1.8e308", "1.8e308", 2) => Type::Numeric(crate::lexer::Numeric::F64),
+                    crate::lexer::Numeric::U8  if self.in_range(val, "0", "255", NumericKind::Unsigned)                      => Type::Numeric(crate::lexer::Numeric::U8),
+                    crate::lexer::Numeric::U16 if self.in_range(val, "0", "65535", NumericKind::Unsigned)                    => Type::Numeric(crate::lexer::Numeric::U16),
+                    crate::lexer::Numeric::U32 if self.in_range(val, "0", "4294967295", NumericKind::Unsigned)               => Type::Numeric(crate::lexer::Numeric::U32),
+                    crate::lexer::Numeric::U64 if self.in_range(val, "0", "18446744073709551615", NumericKind::Unsigned)      => Type::Numeric(crate::lexer::Numeric::U64),
+                    crate::lexer::Numeric::I8  if self.in_range(val, "-128", "127", NumericKind::Signed)                     => Type::Numeric(crate::lexer::Numeric::I8),
+                    crate::lexer::Numeric::I16 if self.in_range(val, "-32768", "32767", NumericKind::Signed)                 => Type::Numeric(crate::lexer::Numeric::I16),
+                    crate::lexer::Numeric::I32 if self.in_range(val, "-2147483648", "2147483647", NumericKind::Signed)       => Type::Numeric(crate::lexer::Numeric::I32),
+                    crate::lexer::Numeric::I64 if self.in_range(val, "-9223372036854775808", "9223372036854775807", NumericKind::Signed) => Type::Numeric(crate::lexer::Numeric::I64),
+                    crate::lexer::Numeric::F16 if self.in_range(val, "-65504.0", "65504.0", NumericKind::Float)              => Type::Numeric(crate::lexer::Numeric::F16),
+                    crate::lexer::Numeric::F32 if self.in_range(val, "-3.4e38", "3.4e38", NumericKind::Float)                => Type::Numeric(crate::lexer::Numeric::F32),
+                    crate::lexer::Numeric::F64 if self.in_range(val, "-1.8e308", "1.8e308", NumericKind::Float)              => Type::Numeric(crate::lexer::Numeric::F64),
                     _ => self.map_numeric(val, &Type::None)
                 }
             },
@@ -297,44 +295,32 @@ impl Checker {
         ty
     }
 
-    fn in_range(&self, val: &String, l: &str, u: &str, mut what: usize) -> bool
+    fn in_range(&self, val: &str, l: &str, u: &str, kind: NumericKind) -> bool
     {
-        if what > 2 { what = 2 }
-
-        if what == 0
-        {
-            if val.contains(".")
-            {
-                return false;
-            }
-
-            let parsed: u64 = val.parse().unwrap_or(0);
-            let plow: u64 = l.parse().unwrap_or(0);
-            let pup: u64 = u.parse().unwrap_or(0);
-
-            return parsed >= plow && parsed <= pup;
-        }
-        else if what == 1 {
-            if val.contains(".")
-            {
-                return false;
-            }
-            
-            let parsed: i64 = val.parse().unwrap_or(0);
-            let plow: i64 = l.parse().unwrap_or(0);
-            let pup: i64 = u.parse().unwrap_or(0);
-
-            return parsed >= plow && parsed <= pup;
-        }
-        else {
-            let parsed: f64 = val.parse().unwrap_or(0.0);
-            let plow: f64 = l.parse().unwrap_or(0.0);
-            let pup: f64 = u.parse().unwrap_or(0.0);
-
-            return parsed >= plow && parsed <= pup;
+        match kind {
+            NumericKind::Unsigned => {
+                if val.contains('.') { return false; }
+                let parsed: u64 = val.parse().unwrap_or(0);
+                let plow:   u64 = l.parse().unwrap_or(0);
+                let pup:    u64 = u.parse().unwrap_or(0);
+                parsed >= plow && parsed <= pup
+            },
+            NumericKind::Signed => {
+                if val.contains('.') { return false; }
+                let parsed: i64 = val.parse().unwrap_or(0);
+                let plow:   i64 = l.parse().unwrap_or(0);
+                let pup:    i64 = u.parse().unwrap_or(0);
+                parsed >= plow && parsed <= pup
+            },
+            NumericKind::Float => {
+                let parsed: f64 = val.parse().unwrap_or(0.0);
+                let plow:   f64 = l.parse().unwrap_or(0.0);
+                let pup:    f64 = u.parse().unwrap_or(0.0);
+                parsed >= plow && parsed <= pup
+            },
         }
     }
-    
+
     fn check_if(&mut self, ifelse: &mut IfElse) -> Type
     {
         let ty: Type;

@@ -273,6 +273,8 @@ impl CGenerator {
                     Operator::Sub => "-",
                     Operator::Mul => "*",
                     Operator::Div => "/",
+                    Operator::Mod => "%",
+                    Operator::Pow => "^",
                     _ => ""
                 };
                 let l = self.gen_expr(b.left());
@@ -292,6 +294,8 @@ impl CGenerator {
                     Operator::GE => ">=",
                     Operator::L => "<",
                     Operator::G => ">",
+                    Operator::BWAnd => "&",
+                    Operator::BWOr => "|",
                     _ => ""
                 };
                 let l = self.gen_expr(b.left());
@@ -411,22 +415,28 @@ impl CGenerator {
                                                                                                       id, e,
                                                                                                       id
                                                                                                     ));
-                                    res.push_str(&format!("\t{{\n{}\n\t}}\n", self.gen_block(&l.body).0));
+                                    res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
                                 }
                                 else {
                                     res.push_str(&format!("\tfor (int {} = {}; {} >= {}; {}--)\n", id, s,
                                                                                                       id, e,
                                                                                                       id
                                                                                                     ));
-                                    res.push_str(&format!("\t{{\n{}\n\t}}\n", self.gen_block(&l.body).0));
+                                    res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
                                 }
                             }
                             else {
                                 res.push_str("\twhile (true)\n");
-                                res.push_str(&format!("\t{{\n{}\n\t}}\n", self.gen_block(&l.body).0));
+                                res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
                             }
                         },
                     }
+                },
+                Items::Stop => {
+                    res.push_str("\tbreak;\n");
+                },
+                Items::Skip => {
+                    res.push_str("\tcontinue;\n");
                 },
             }
         }

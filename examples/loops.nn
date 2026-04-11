@@ -4,4 +4,33 @@ fun main()
     {
         show(i);
     }
+
+    show("----------");
+
+    mut var i = 0;
+    loop // non-indexed loop
+    {
+        i = i + 1;
+
+        if i % 3 == 0 {
+            show(i);
+        }
+        else if i > 12 { stop; }
+        else { skip; }
+    }
+
+    show("----------");
+
+    mut var unary: i32 = 0;
+    i = 0;
+    loop // non-indexed loop
+    {
+        show(unary);
+        
+        i = i + 1;
+
+        unary = i & 3;
+        
+        if i > 12 { stop; }
+    }
 }

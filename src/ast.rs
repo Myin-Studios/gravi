@@ -21,6 +21,8 @@ pub enum Items
     Var(Var),
     Ret(Value),
     Expr(Value),
+    Stop,
+    Skip,
 }
 
 #[derive(Clone, Debug)]

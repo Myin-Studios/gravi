@@ -410,7 +410,7 @@ impl Parser {
                 match t.kind() {
                     TokenKind::Operator(o) => {
                         match o {
-                            Operator::Mul | Operator::Div => {
+                            Operator::Mul | Operator::Div | Operator::Mod | Operator::Pow => {
 
                                 let _ = tokens.pop();
                                 let r = self.parse_factor(tokens);
@@ -655,6 +655,12 @@ impl Parser {
                             Keyword::Loop => {
                                 stmts.push(Items::Expr(Value::Loop(self.parse_loop(tokens))));
                             },
+                            Keyword::Stop => {
+                                stmts.push(Items::Stop);
+                            },
+                            Keyword::Skip => {
+                                stmts.push(Items::Skip);
+                            },
                             _ => {
                                 self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
                                             .file(t.file())
@@ -666,14 +672,11 @@ impl Parser {
                         }
                     },
                     TokenKind::Identifier(id) => {
-                        // t è già stato poppato: tokens.last() è il token DOPO l'identificatore
                         let id = id.clone();
                         if tokens.last().map(|n| n.kind()) == Some(&TokenKind::Punctuation(Punctuation::LParen)) {
-                            // chiamata a funzione: parse_args consuma la '(' e gli argomenti
                             let params = self.parse_args(tokens);
                             stmts.push(Items::Expr(Value::Call(id, params)));
                         } else {
-                            // assegnazione: rimettiamo l'identificatore per parse_var
                             tokens.push(t);
                             stmts.push(Items::Var(Var::Var(self.parse_var(tokens))));
                         }

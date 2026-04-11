@@ -106,6 +106,8 @@ pub enum Operator
     Sub,
     Mul,
     Div,
+    Mod,
+    Pow,
     LAnd,
     LOr,
     LNot,
@@ -298,7 +300,7 @@ impl Lexer {
     fn is_punctuation(&self, ignore: Option<char>) -> bool {
         let c = self.next();
         if Some(c) == ignore { return false; }
-        matches!(c, '.' | ',' | ':' | ';' | '=' | '+' | '-' | '*' | '/' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '&' | '!')
+        matches!(c, '.' | ',' | ':' | ';' | '=' | '+' | '-' | '*' | '%' | '^' | '/' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '&' | '!' | '<' | '>')
     }
 
     fn read_string_literal(&mut self) -> String
@@ -465,6 +467,8 @@ impl Lexer {
             "-"  => Token::new(TokenKind::Operator(Operator::Sub),   &self.file, self.line, self.column - word.len()),
             "*"  => Token::new(TokenKind::Operator(Operator::Mul),   &self.file, self.line, self.column - word.len()),
             "/"  => Token::new(TokenKind::Operator(Operator::Div),   &self.file, self.line, self.column - word.len()),
+            "%"  => Token::new(TokenKind::Operator(Operator::Mod),   &self.file, self.line, self.column - word.len()),
+            "^"  => Token::new(TokenKind::Operator(Operator::Pow),   &self.file, self.line, self.column - word.len()),
             "!"  => Token::new(TokenKind::Operator(Operator::LNot),  &self.file, self.line, self.column - word.len()),
             "||" => Token::new(TokenKind::Operator(Operator::LOr),   &self.file, self.line, self.column - word.len()),
             "&&" => Token::new(TokenKind::Operator(Operator::LAnd),  &self.file, self.line, self.column - word.len()),
@@ -517,7 +521,7 @@ impl Lexer {
                     word.push(c);
                 }
             },
-            '+' | '-' | '*' | '/' | ';' | ',' | '(' | ')' | '[' | ']' | '{' | '}' | '\'' => {
+            '+' | '-' | '*' | '/' | '%' | '^' | ';' | ',' | '(' | ')' | '[' | ']' | '{' | '}' | '\'' => {
                 word.push(self.advance());
             },
             '"' => {

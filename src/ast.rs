@@ -125,6 +125,7 @@ pub enum Value
     StringLiteral(String),
     Boolean(BoolValue),
     Call(String, Vec<Value>),
+    List(String, Vec<Vec<Value>>), // vector: a[index] --- matrix: a[row; column] --- array as result: a[i1, i1, ... in]
     Block(Type, Vec<Items>),
     IfElse(IfElse),
     Loop(Loop),

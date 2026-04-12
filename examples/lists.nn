@@ -1,0 +1,7 @@
+fun main()
+{
+    mut var list: i32 = 0::9;
+
+    var elem = list[3];
+    var elem_to_list: i32 = list[3, 4];
+}

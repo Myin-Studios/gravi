@@ -251,6 +251,17 @@ impl CGenerator {
                         mutable, ty, var.identifier(), self.gen_if_ternary(ifelse)));
                 },
                 Value::Loop(_) => {},
+                Value::List(id, indices) => {
+                    if indices[0].len() > 1
+                    {
+                        // ignore for now! just for a future support of matrices!
+                    }
+                    else {
+                        let list_name = self.get_set_mangled(id);
+                        let index = &indices[0][0];
+                        res.push_str(&format!("\t{}{} {} = {}[{}];\n", mutable, ty, var.identifier(), list_name, self.gen_val(index)));
+                    }
+                },
             }
         }
         else {
@@ -430,6 +441,7 @@ impl CGenerator {
                                 res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
                             }
                         },
+                        Value::List(_, indices) => {},
                     }
                 },
                 Items::Stop => {
@@ -459,6 +471,7 @@ impl CGenerator {
             Value::IfElse(ifelse)       => res.push_str(&self.gen_if_ternary(ifelse)),
             Value::Null                 => {},
             Value::Loop(_) => {},
+            Value::List(_, indices) => {},
         }
 
         res
@@ -560,6 +573,7 @@ impl CGenerator {
                 Value::Block(_, _) => {},
                 Value::IfElse(_)   => {},
                 Value::Loop(_)     => {},
+                Value::List(_, _)  => {},
             }
 
             if i < vals.len() - 1 {
@@ -613,6 +627,7 @@ impl CGenerator {
                 Value::Block(_, _) => {},
                 Value::IfElse(_)   => {},
                 Value::Loop(_)     => {},
+                Value::List(_, _)  => {},
             }
         }
 
@@ -637,6 +652,7 @@ impl CGenerator {
             Value::IfElse(_)   => String::new(),
             Value::Null        => String::new(),
             Value::Loop(_)     => String::new(),
+            Value::List(_, _)  => String::new(),
         };
 
         format!("\treturn {};\n", inner)

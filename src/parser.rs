@@ -216,6 +216,9 @@ impl Parser {
                                 let params: Vec<Value> = self.parse_args(tokens);
                                 return Value::Call(v, params);
                             }
+                            else if next.kind() == &TokenKind::Punctuation(Punctuation::LBracket) {
+                                return Value::List(v, self.parse_list(tokens));
+                            }
                             else {
                                 tokens.push(temp);
                                 return Value::Expression(self.parse_binary(tokens, 0));
@@ -676,6 +679,9 @@ impl Parser {
                         if tokens.last().map(|n| n.kind()) == Some(&TokenKind::Punctuation(Punctuation::LParen)) {
                             let params = self.parse_args(tokens);
                             stmts.push(Items::Expr(Value::Call(id, params)));
+                        } else if tokens.last().map(|n| n.kind()) == Some(&TokenKind::Punctuation(Punctuation::LBracket)) {
+                            tokens.push(t);
+                            stmts.push(Items::Expr(Value::List(id, self.parse_list(tokens))));
                         } else {
                             tokens.push(t);
                             stmts.push(Items::Var(Var::Var(self.parse_var(tokens))));
@@ -882,7 +888,53 @@ impl Parser {
         }
     }
 
+    fn parse_list(&mut self, tokens: &mut Vec<Token>) -> Vec<Vec<Value>>
+    {
+        let mut indices = Vec::new();
+        let mut v = Vec::new();
+        
+        tokens.pop(); // consume '['
+
+        
+        loop {
+            if let Some(t) = tokens.pop()
+            {
+                match t.kind() {
+                    TokenKind::Identifier(_) | TokenKind::Value(_) => {
+                        tokens.push(t);
+                        v.push(self.parse_value(tokens));
+                    },
+                    TokenKind::Punctuation(p) => {
+                        if matches!(p, Punctuation::Comma) {
+                            v.push(self.parse_value(tokens));
+                        } else if matches!(p, Punctuation::SemiColon) {
+                            if !v.is_empty() { indices.push(v.clone()); }
+                            v.clear();
+                        } else if matches!(p, Punctuation::RBracket) {
+                            if !v.is_empty() { indices.push(v.clone()); }
+                            break;
+                        } else {
+                            // error! invalid token
+                            self.rep.add(NyonError::throw(crate::error::Kind::UnexpectedToken(t)));
+                            break;
+                        }
+                    },
+                    _ => {
+                        break;
+                    }
+                }
+            }
+            else {
+                break;
+            }
+        }
+
+        tokens.pop(); // consume ']'
+
+        indices
+    }
+
     pub fn reporter(&self) -> &Reporter  { &self.rep }
     pub fn output(&self)   -> &Program   { &self.prog }
-    pub fn output_mut(&mut self) -> &mut Program { println!("{:#?}", self.prog); &mut self.prog }
+    pub fn output_mut(&mut self) -> &mut Program { &mut self.prog }
 }

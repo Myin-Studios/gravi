@@ -231,6 +231,15 @@ impl Checker {
                 ty = self.check_if(ifelse);
             },
             Value::Loop(_) => {}
+            Value::List(id, _) => {
+                if let Some(elem) = self.has(id)
+                {
+                    ty = elem.ty.ty.clone();
+                }
+                else {
+                    // error! undeclared variable!
+                }
+            },
         }
 
         ty
@@ -255,6 +264,9 @@ impl Checker {
             },
             Expr::Literal(val) => {
                 ty = self.map_numeric(val, expected);
+            },
+            Expr::Range(ran) => {
+                ty = self.check_range(ran, expected);
             },
             Expr::Binary(b) | Expr::Boolean(b) => {
                 let l = self.check_val(&mut Value::Expression(b.left().clone()), expected);
@@ -353,6 +365,43 @@ impl Checker {
                 parsed >= plow && parsed <= pup
             },
         }
+    }
+
+    fn check_range(&mut self, range: &mut Range, expected: &Type) -> Type
+    {
+        let ty: Type;
+
+        let start = self.check_expr(&mut range.start, expected);
+        let step = if let Some(st) = &mut range.step
+        {
+            Some(self.check_expr(st, expected))
+        }
+        else {
+            None
+        };
+        let end = self.check_expr(&mut range.end, expected);
+
+        ty = if let Some(st) = step
+        {
+            if start == st && st == end
+            {
+                start
+            }
+            else {
+                Type::None
+            }
+        }
+        else {
+            if start == end
+            {
+                start
+            }
+            else {
+                Type::None
+            }
+        };
+
+        ty
     }
 
     fn check_if(&mut self, ifelse: &mut IfElse) -> Type

@@ -64,59 +64,56 @@ impl CGenerator {
                     {
                         match sym {
                             symbol::Symbol::Function(fun) => {
-                                if let Some(body) = fun.body.clone()
-                                {
-                                    for item in body.clone()
-                                    {
+                                if let Some(body) = fun.body.clone() {
+                                    let params_start = self.name_map.len();
+
+                                    for (_, (name, ty, _, _)) in fun.params.iter().enumerate() {
+                                        self.register_var(name, ty.clone());
+                                    }
+
+                                    let mut helpers = String::new();
+                                    for item in &body {
                                         match item {
-                                            Items::Var(variable) => {
-                                                match variable {
-                                                    Var::Decl(decl) => {
-                                                        if let Some(v) = decl.value()
-                                                        {
-                                                            match v {
-                                                                Value::IfElse(_) | Value::Block(_, _) => {
-                                                                    res.push_str(&self.pregen_lambda(v));
-                                                                },
-                                                                _ => {}
-                                                            }
-                                                        }
-                                                    },
-                                                    Var::Var(var) => {
-                                                        if let Some(v) = &var.val
-                                                        {
-                                                            match v {
-                                                                Value::IfElse(_) | Value::Block(_, _) => {
-                                                                    res.push_str(&self.pregen_lambda(v));
-                                                                },
-                                                                _ => {}
-                                                            }
-                                                        }
-                                                    },
+                                            Items::Var(Var::Decl(decl)) => {
+                                                if let Some(v) = decl.value() {
+                                                    match v {
+                                                        Value::IfElse(_) | Value::Block(_, _) => {
+                                                            helpers.push_str(&self.pregen_lambda(v));
+                                                        },
+                                                        _ => {}
+                                                    }
                                                 }
-                                            }
+                                            },
+                                            Items::Var(Var::Var(var)) => {
+                                                if let Some(v) = &var.val {
+                                                    match v {
+                                                        Value::IfElse(_) | Value::Block(_, _) => {
+                                                            helpers.push_str(&self.pregen_lambda(v));
+                                                        },
+                                                        _ => {}
+                                                    }
+                                                }
+                                            },
                                             _ => {}
                                         }
                                     }
-                                }
-                                
-                                res.push_str(&format!("{} nn_{}(", self.get_type(&fun.ret), id));
-                                for (i, (name, ty, mutable, _)) in fun.params.iter().enumerate()
-                                {
-                                    let n = self.register_var(name, ty.clone());
+                                    res.push_str(&helpers);
 
-                                    if !mutable { res.push_str("const "); }
-                                    res.push_str(&format!("{} {}", self.get_type(&ty), n));
+                                    res.push_str(&format!("{} nn_{}(", self.get_type(&fun.ret), id));
+                                    for (i, (name, ty, mutable, _)) in fun.params.iter().enumerate() {
+                                        let n = self.get_set_mangled(name);
+                                        if !mutable { res.push_str("const "); }
+                                        res.push_str(&format!("{} {}", self.get_type(&ty), n));
+                                        if i < fun.params.len() - 1 { res.push_str(", "); }
+                                    }
+                                    res.push_str(")\n");
 
-                                    if i < fun.params.len() - 1 { res.push_str(", "); }
-                                }
-                                res.push_str(")\n");
-                                if let Some(body) = fun.body.clone()
-                                {
                                     let bd = self.gen_block(&body).0;
                                     res.push_str(&format!("{{\n{}\n}}\n", bd));
+
+                                    self.name_map.truncate(params_start);
                                 } else {
-                                    res.push_str(";\n");
+                                    res.push_str(&format!("{} nn_{}();\n", self.get_type(&fun.ret), id));
                                 }
                             },
                             symbol::Symbol::Variable(_) => {

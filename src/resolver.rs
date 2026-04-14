@@ -103,8 +103,9 @@ impl Resolver {
                                                                                 }));
                                 },
                                 crate::ast::Subspace::Some(spaces) => {
-                                    if !f.public { self.rep.add(NyonError::throw(crate::error::Kind::PrivateImport(f.id.clone()))); }
                                     if spaces.iter().any(|s| s.name == f.id) {
+                                        if !f.public { self.rep.add(NyonError::throw(crate::error::Kind::PrivateImport(f.id.clone()))); }
+                                        
                                         self.symbols.add(f.identifier(), symbol::Symbol::Function(FunctionSym {
                                                                                     params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone())).collect(),
                                                                                     ret:    f.ret.clone(),

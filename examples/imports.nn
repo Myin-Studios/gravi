@@ -1,4 +1,4 @@
-with {functions::{add, div/*, main <- uncomment this to see the magic result! (an error saying "Too many entry points"*/}, logical::example::inner};
+with {functions::{add, div/*, main <- uncomment this to see the magic result! (an error saying "Too many entry points"*/}, logical};
 
 fun main()
 {

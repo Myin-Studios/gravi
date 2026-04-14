@@ -9,10 +9,26 @@ pub struct Program
 #[derive(Clone, Debug)]
 pub enum Global
 {
-    // Import,
+    Import(Vec<Space>),
     Fun(Function),
     // Class,
     // Inter,
+}
+
+#[derive(Clone, Debug)]
+pub struct Space
+{
+    pub name: String,
+    pub alias: Option<String>,
+    pub sub: Option<Subspace>,
+    pub used: bool,
+}
+
+#[derive(Clone, Debug)]
+pub enum Subspace
+{
+    All,
+    Some(Vec<Space>),
 }
 
 #[derive(Clone, Debug)]
@@ -223,6 +239,7 @@ impl Range {
 #[derive(Clone, Debug)]
 pub struct Function
 {
+    pub public: bool,
     pub lambda: bool,
     pub main:   bool,
     pub id:     String,
@@ -236,6 +253,7 @@ impl Function {
     {
         Self
         {
+            public: false,
             lambda: false,
             main:   false,
             id:     "".to_string(),

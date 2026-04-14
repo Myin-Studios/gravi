@@ -5,6 +5,8 @@ use colored::Colorize;
 pub mod ast;
 pub mod lexer;
 pub mod parser;
+pub mod symbol;
+pub mod resolver;
 pub mod typechecker;
 pub mod codegen;
 pub mod backend;
@@ -12,6 +14,8 @@ pub mod error;
 
 use backend::Backend;
 use codegen::{BackendType, BuildFlag, Target};
+
+use crate::symbol::SymbolTable;
 
 fn info()
 {
@@ -61,24 +65,31 @@ fn clear(all: bool)
     }
 }
 
-fn lex(input: &str) -> lexer::Lexer
+pub fn lex(input: &str) -> lexer::Lexer
 {
     let mut l = lexer::Lexer::new(input);
     l.process();
     l
 }
 
-fn parse(tokens: &mut Vec<lexer::Token>) -> parser::Parser
+pub fn parse(tokens: &mut Vec<lexer::Token>) -> parser::Parser
 {
     let mut p = parser::Parser::new();
     p.process(tokens);
     p
 }
 
-fn typecheck(prog: &mut ast::Program) -> typechecker::Checker
+fn resolve(prog: &ast::Program) -> resolver::Resolver
+{
+    let mut r = resolver::Resolver::new();
+    r.process(prog);
+    r
+}
+
+fn typecheck(prog: &mut ast::Program, mut symbols: &mut SymbolTable) -> typechecker::Checker
 {
     let mut tc = typechecker::Checker::new();
-    tc.process(prog);
+    tc.process(prog, &mut symbols);
     tc
 }
 
@@ -115,12 +126,14 @@ fn build(input: String, filename: &str, ty: BackendType, target: Target, flag: B
     p.reporter().fire_all();
     if p.reporter().has_errors() { std::process::exit(1); }
 
-    let mut tc = typecheck(p.output_mut());
+    let mut r = resolve(p.output());
+
+    let mut tc = typecheck(p.output_mut(), r.output());
     tc.reporter().fire_all();
     if tc.reporter().has_errors() { std::process::exit(1); }
 
     let mut cg = backend::c::CGenerator::new();
-    cg.process(p.output());
+    cg.process(p.output(), r.output());
     cg.reporter().fire_all();
     if cg.reporter().has_errors() { std::process::exit(1); }
 

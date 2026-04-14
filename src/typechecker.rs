@@ -1,34 +1,11 @@
 pub use crate::ast::*;
-use crate::{error::{NyonError, Reporter}, lexer::Type};
-
-#[derive(Clone, Debug)]
-pub struct TypeInfo
-{
-    ty:      Type,
-    #[allow(dead_code)]
-    mutable: bool
-}
-
-#[derive(Clone, Debug)]
-pub struct SymbolInfo
-{
-    id: String,
-    ty: TypeInfo,
-}
-
-impl SymbolInfo {
-    pub fn new(k: String, v: TypeInfo) -> Self
-    {
-        Self { id: k, ty: v }
-    }
-}
+use crate::{error::{NyonError, Reporter}, lexer::Type, symbol::{self, SymbolTable, VariableSym}};
 
 /// Distinguishes how numeric bounds should be parsed in `in_range`.
 enum NumericKind { Unsigned, Signed, Float }
 
 pub struct Checker
 {
-    stack: Vec<Vec<SymbolInfo>>,
     rep:   Reporter,
 }
 
@@ -37,91 +14,58 @@ impl Checker {
     {
         Self
         {
-            stack: Vec::new(),
             rep:   Reporter::new(),
         }
     }
 
-    pub fn process(&mut self, prog: &mut Program)
+    pub fn process(&mut self, prog: &mut Program, symbol: &mut SymbolTable)
     {
+        let imported = symbol.take();
+        for (name, ret, params, mut body) in imported {
+            symbol.push(symbol::ScopeKind::Function(name.clone(), ret));
+            for (pname, pty, pmut, ppar) in &params {
+                symbol.add(pname, symbol::Symbol::Variable(VariableSym { ty: pty.clone(), mutable: *pmut, par: ppar.clone() }));
+            }
+            symbol.push(symbol::ScopeKind::Block);
+            self.check_body(&mut body, symbol);
+            symbol.pop();
+            symbol.pop();
+            symbol.restore(&name, body);
+        }
+
         for item in prog.items.iter_mut()
         {
             match item {
                 Global::Fun(fun) => {
-                    let mut map = Vec::new();
-                    map.push(
-                        SymbolInfo::new(fun.identifier().to_string(),
-                        TypeInfo
-                        {
-                            ty:      fun.ret().to_owned(),
-                            mutable: false,
-                        })
-                    );
-
-                    self.stack.push(map);
-
-                    self.check_fun(fun);
+                    symbol.push(crate::symbol::ScopeKind::Function(fun.id.clone(), fun.ret.clone()));
+                    self.check_fun(fun, symbol);
+                    symbol.pop();
                 },
+                _ => {},
             }
         }
     }
 
-    fn has(&self, what: &str) -> Option<&SymbolInfo>
+    fn check_fun(&mut self, fun: &mut Function, symbol: &mut SymbolTable)
     {
-        for symbols in &self.stack
-        {
-            if let Some(s) = symbols.iter().find(|s| s.id == what)
-            {
-                return Some(s);
-            }
-        }
-
-        None
-    }
-
-    fn set_type(&mut self, name: &str, ty: Type)
-    {
-        for symbols in &mut self.stack
-        {
-            if let Some(s) = symbols.iter_mut().find(|s| s.id == name)
-            {
-                s.ty.ty = ty;
-                return;
-            }
-        }
-    }
-
-    fn check_fun(&mut self, fun: &mut Function)
-    {
-        // Push all parameters into a single scope level
-        let mut param_scope: Vec<SymbolInfo> = Vec::new();
         for param in fun.params()
         {
-            param_scope.push(SymbolInfo::new(
-                param.identifier().to_string(),
-                TypeInfo
+            symbol.add(param.identifier(), crate::symbol::Symbol::Variable(
+                VariableSym
                 {
-                    ty:      param.ty().to_owned(),
-                    mutable: param.mutable()
+                    mutable: param.mutable(),
+                    ty:      param.ty().clone(),
+                    par:     param.parallelism().clone()
                 }
             ));
         }
-        if !param_scope.is_empty()
-        {
-            self.stack.push(param_scope);
-        }
 
-        self.stack.push(Vec::new());
-        self.check_body(&mut fun.body);
-        self.stack.pop();
-
-        if !fun.params().is_empty()
-        {
-            self.stack.pop();
-        }
+        symbol.push(crate::symbol::ScopeKind::Block);
+        self.check_body(&mut fun.body, symbol);
+        symbol.pop();
     }
 
-    fn check_body(&mut self, items: &mut Vec<Items>) -> Type
+    fn check_body(&mut self, items: &mut Vec<Items>, symbol: &mut SymbolTable) -> Type
     {
         let mut ty = Type::None;
 
@@ -137,7 +81,7 @@ impl Checker {
                             {
                                 if let Some(val) = v.val.as_mut()
                                 {
-                                    ty = self.check_val(val, &ty);
+                                    ty = self.check_val(val, &ty, symbol);
                                 }
 
                                 v.ty = ty.clone();
@@ -146,7 +90,7 @@ impl Checker {
                             {
                                 if let Some(val) = v.val.as_mut()
                                 {
-                                    let t = self.check_val(&mut val.clone(), v.ty());
+                                    let t = self.check_val(&mut val.clone(), v.ty(), symbol);
                                     if t != v.ty().to_owned()
                                     {
                                         self.rep.add(NyonError::throw(crate::error::Kind::TypeMismatch(v.ty.to_owned(), t)));
@@ -154,33 +98,34 @@ impl Checker {
                                 }
                             }
 
-                            if let Some(last) = self.stack.last_mut()
-                            {
-                                last.push(SymbolInfo::new(
-                                    v.identifier().to_string(),
-                                    TypeInfo
-                                    {
-                                        ty:      v.ty().to_owned(),
-                                        mutable: v.mutable()
-                                    })
-                                );
-                            }
+                            symbol.add(v.identifier(), crate::symbol::Symbol::Variable(
+                                VariableSym
+                                {
+                                    mutable: v.mutable(),
+                                    ty:      v.ty().clone(),
+                                    par:     v.parallelism().clone()
+                                }
+                            ));
                         },
                         Var::Var(v) => {
                             let name = v.name.clone();
-                            let current_ty = self.has(&name).map(|s| s.ty.ty.clone());
+                            let existing = symbol.find(&name).and_then(|s| match s {
+                                symbol::Symbol::Variable(var) => Some(var.clone()),
+                                _ => None,
+                            });
 
-                            if let Some(Type::None) = current_ty {
+                            if let Some(mut var_sym) = existing {
                                 if let Some(val) = v.val.as_mut() {
-                                    let inferred = self.check_val(val, &Type::None);
-                                    self.set_type(&name, inferred.clone());
+                                    var_sym.ty = self.check_val(val, &Type::None, symbol);
+                                }
 
-                                    for prev in back.iter_mut() {
-                                        if let Items::Var(Var::Decl(decl)) = prev {
-                                            if decl.id == name && decl.ty == Type::None {
-                                                decl.ty = inferred.clone();
-                                                break;
-                                            }
+                                symbol.add(&name, symbol::Symbol::Variable(var_sym.clone()));
+
+                                for prev in back.iter_mut() {
+                                    if let Items::Var(Var::Decl(decl)) = prev {
+                                        if decl.id == name && decl.ty == Type::None {
+                                            decl.ty = var_sym.ty.clone();
+                                            break;
                                         }
                                     }
                                 }
@@ -189,15 +134,16 @@ impl Checker {
                     }
                 },
                 Items::Expr(Value::Block(_, b)) => {
-                    self.stack.push(Vec::new());
-                    self.check_body(b);
-                    self.stack.pop();
+                    symbol.push(symbol::ScopeKind::Block);
+                    self.check_body(b, symbol);
+                    symbol.pop();
                 },
                 Items::Expr(Value::IfElse(ifelse)) => {
-                    ty = self.check_if(ifelse);
+                    ty = self.check_if(ifelse, symbol);
                 },
                 Items::Ret(val) => {
-                    ty = self.check_val(val, &ty);
+                    let expected = symbol.nearest_fun().cloned().unwrap_or(ty.clone());
+                    ty = self.check_val(val, &expected, symbol);
                 }
                 _ => {}
             }
@@ -206,13 +152,13 @@ impl Checker {
         ty
     }
 
-    fn check_val(&mut self, val: &mut Value, expected: &Type) -> Type
+    fn check_val(&mut self, val: &mut Value, expected: &Type, symbol: &mut SymbolTable) -> Type
     {
         let mut ty = Type::None;
 
         match val {
             Value::Expression(expr) => {
-                ty = self.check_expr(expr, expected);
+                ty = self.check_expr(expr, expected, symbol);
             },
             Value::StringLiteral(_) => {
                 ty = Type::StringLiteral;
@@ -221,20 +167,25 @@ impl Checker {
             Value::Call(_, _values) => {},
             Value::Null => ty = Type::None,
             Value::Block(bty, b) => {
-                self.stack.push(Vec::new());
-                let inf = self.check_body(b);
+                symbol.push(symbol::ScopeKind::Block);
+                let inf = self.check_body(b, symbol);
                 *bty = inf.clone();
                 ty = inf;
-                self.stack.pop();
+                symbol.pop();
             },
             Value::IfElse(ifelse) => {
-                ty = self.check_if(ifelse);
+                ty = self.check_if(ifelse, symbol);
             },
             Value::Loop(_) => {}
             Value::List(id, _) => {
-                if let Some(elem) = self.has(id)
+                if let Some(elem) = symbol.find(id)
                 {
-                    ty = elem.ty.ty.clone();
+                    match elem {
+                        symbol::Symbol::Variable(var) => {
+                            ty = var.ty.clone()
+                        },
+                        _ => {}
+                    }
                 }
                 else {
                     // error! undeclared variable!
@@ -245,20 +196,20 @@ impl Checker {
         ty
     }
 
-    fn check_expr(&mut self, expr: &mut Expr, expected: &Type) -> Type
+    fn check_expr(&mut self, expr: &mut Expr, expected: &Type, symbol: &mut SymbolTable) -> Type
     {
         let mut ty = Type::None;
 
         match expr {
             Expr::Identifier(id) => {
-                for outer in &self.stack
+                let sym = symbol.find(id);
+                if let Some(s) = sym
                 {
-                    for inner in outer
-                    {
-                        if inner.id == *id
-                        {
-                            ty = inner.ty.ty.clone();
-                        }
+                    match s {
+                        symbol::Symbol::Variable(var) => {
+                            ty = var.ty.clone()
+                        },
+                        _ => {}
                     }
                 }
             },
@@ -266,11 +217,11 @@ impl Checker {
                 ty = self.map_numeric(val, expected);
             },
             Expr::Range(ran) => {
-                ty = self.check_range(ran, expected);
+                ty = self.check_range(ran, expected, symbol);
             },
             Expr::Binary(b) | Expr::Boolean(b) => {
-                let l = self.check_val(&mut Value::Expression(b.left().clone()), expected);
-                let r = self.check_val(&mut Value::Expression(b.right().clone()), expected);
+                let l = self.check_val(&mut Value::Expression(b.left().clone()), expected, symbol);
+                let r = self.check_val(&mut Value::Expression(b.right().clone()), expected, symbol);
 
                 if l != r
                 {
@@ -280,7 +231,7 @@ impl Checker {
                 ty = l;
             },
             Expr::Grouped(expr) => {
-                ty = self.check_expr(expr, expected);
+                ty = self.check_expr(expr, expected, symbol);
             },
             Expr::Unary(u) => {
                 let mut exp = Type::None;
@@ -290,7 +241,7 @@ impl Checker {
                     _ => {} // error?
                 }
 
-                ty = self.check_expr(&mut u.right, &exp);
+                ty = self.check_expr(&mut u.right, &exp, symbol);
             },
             _ => {}
         }
@@ -367,19 +318,19 @@ impl Checker {
         }
     }
 
-    fn check_range(&mut self, range: &mut Range, expected: &Type) -> Type
+    fn check_range(&mut self, range: &mut Range, expected: &Type, symbol: &mut SymbolTable) -> Type
     {
         let ty: Type;
 
-        let start = self.check_expr(&mut range.start, expected);
+        let start = self.check_expr(&mut range.start, expected, symbol);
         let step = if let Some(st) = &mut range.step
         {
-            Some(self.check_expr(st, expected))
+            Some(self.check_expr(st, expected, symbol))
         }
         else {
             None
         };
-        let end = self.check_expr(&mut range.end, expected);
+        let end = self.check_expr(&mut range.end, expected, symbol);
 
         ty = if let Some(st) = step
         {
@@ -404,17 +355,17 @@ impl Checker {
         ty
     }
 
-    fn check_if(&mut self, ifelse: &mut IfElse) -> Type
+    fn check_if(&mut self, ifelse: &mut IfElse, symbol: &mut SymbolTable) -> Type
     {
         let ty: Type;
 
-        self.stack.push(Vec::new());
-        ty = self.check_body(ifelse.body.as_mut());
-        self.stack.pop();
+        symbol.push(symbol::ScopeKind::Block);
+        ty = self.check_body(ifelse.body.as_mut(), symbol);
+        symbol.pop();
 
         if let Some(elif) = ifelse.elif.as_mut()
         {
-            let elif_ty = self.check_if(elif);
+            let elif_ty = self.check_if(elif, symbol);
 
             if ty != elif_ty
             {

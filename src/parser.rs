@@ -1,7 +1,8 @@
 use colored::Colorize;
 
-use crate::{error::{NyonError, Reporter}, lexer::*, ast::*};
+use crate::{resolver, error::{NyonError, Reporter}, lexer::*, ast::*};
 
+#[derive(Clone, Debug)]
 pub struct Parser
 {
     prog: Program,
@@ -39,13 +40,58 @@ impl Parser {
     {
         tokens.reverse();
 
+        let mut public = false;
+
         loop
         {
             if let Some(t) = tokens.pop()
             {
                 match t.kind() {
+                    TokenKind::Keyword(Keyword::With) => {
+                        let mut spaces: Vec<Space> = Vec::new();
+
+                        if let Some(next) = tokens.last().cloned()
+                        {
+                            match next.kind() {
+                                TokenKind::Punctuation(Punctuation::LBrace) => {
+                                    loop {
+                                        if let Some(closing) = tokens.last()
+                                        {
+                                            println!("{:#?}", closing.kind());
+
+                                            if matches!(closing.kind(), TokenKind::Punctuation(Punctuation::RBrace) | TokenKind::Punctuation(Punctuation::SemiColon))
+                                            {
+                                                tokens.pop();
+                                                break;
+                                            }
+                                            else if matches!(closing.kind(), TokenKind::Punctuation(Punctuation::Comma)) {
+                                                tokens.pop();
+                                            }
+                                        }
+
+                                        spaces.push(self.parse_space(tokens));
+                                    }
+                                },
+                                TokenKind::Punctuation(Punctuation::SemiColon) => {
+                                    tokens.pop();
+                                },
+                                TokenKind::Punctuation(Punctuation::Comma) => {
+                                    println!("Found comma");
+                                }
+                                TokenKind::Identifier(_) => {
+                                    spaces.push(self.parse_space(tokens));
+                                }
+                                _ => {
+                                    // error! unexpected token
+                                }
+                            }
+                        }
+
+                        if !spaces.is_empty() { self.prog.add(Global::Import(spaces)) }
+                    },
+                    TokenKind::Keyword(Keyword::Pub) => public = true,
                     TokenKind::Keyword(Keyword::Fun) => {
-                        let fun = self.parse_function(tokens);
+                        let fun = self.parse_function(tokens, public);
                         self.prog.add(fun);
                     },
                     _ => {}
@@ -55,6 +101,104 @@ impl Parser {
                 break;
             }
         }
+    }
+
+    fn parse_space(&mut self, tokens: &mut Vec<Token>) -> Space
+    {
+        let mut name: String = String::new();
+        let mut sub: Option<Subspace> = None;
+
+        loop {
+            if let Some(t) = tokens.last().cloned()
+            {
+                match t.kind() {
+                    TokenKind::Identifier(id) => {
+                        tokens.pop();
+                        name = id.to_string();
+                    },
+                    TokenKind::Punctuation(Punctuation::LBrace) => {
+                        tokens.pop();
+                    },
+                    TokenKind::Punctuation(Punctuation::RBrace) => {
+                        break;
+                    },
+                    TokenKind::Punctuation(Punctuation::RangeInclusive) => {
+                        tokens.pop();
+                        sub = self.parse_subspace(tokens);
+                    },
+                    TokenKind::Punctuation(Punctuation::Comma) => {
+                        break;
+                    },
+                    _ => {
+                        // error! unexpected token
+                        break;
+                    }
+                }
+            }
+            else {
+                break;
+            }
+        }
+        
+        Space
+        {
+            name,
+            alias: None,
+            sub,
+            used: false
+        }
+    }
+
+    fn parse_subspace(&mut self, tokens: &mut Vec<Token>) -> Option<Subspace>
+    {
+        let mut spaces: Vec<Space> = Vec::new();
+        
+        loop {
+            if let Some(t) = tokens.last().cloned()
+            {
+                match t.kind() {
+                    TokenKind::Identifier(_) => {
+                        spaces.push(self.parse_space(tokens));
+                    },
+                    TokenKind::Punctuation(Punctuation::RangeInclusive) => {
+                        spaces.push(self.parse_space(tokens));
+                    },
+                    TokenKind::Punctuation(Punctuation::Comma) => {
+                        tokens.pop();
+
+                        spaces.push(self.parse_space(tokens));
+                    },
+                    TokenKind::Punctuation(Punctuation::LBrace) => {
+                        spaces.push(self.parse_space(tokens));
+                        
+                        if let Some(next) = tokens.last()
+                        {
+                            if matches!(next.kind(), TokenKind::Punctuation(Punctuation::RBrace))
+                            {
+                                tokens.pop();
+                                break;
+                            }
+                        }
+                        else {
+                            // error!
+                            break;
+                        }
+                    },
+                    TokenKind::Punctuation(Punctuation::RBrace) => {
+                        tokens.pop();
+                        break;
+                    },
+                    _ => { break; }
+                }
+            }
+            else {
+                break;
+            }
+        }
+
+        Some(
+            Subspace::Some(spaces)
+        )
     }
 
     fn parse_var_decl(&mut self, par: &Parallelism, mutable: bool, tokens: &mut Vec<Token>) -> VarDecl
@@ -145,7 +289,9 @@ impl Parser {
                 if let Some(val) = tokens.last()
                 {
                     match val.kind() {
-                        TokenKind::Identifier(_) | TokenKind::Value(_) | TokenKind::Operator(_) => Some(self.parse_value(tokens)),
+                        TokenKind::Identifier(_) | TokenKind::Value(_) |
+                        TokenKind::Operator(_) | TokenKind::Keyword(Keyword::If) |
+                        TokenKind::Punctuation(Punctuation::LBrace) => Some(self.parse_value(tokens)),
                         _ => None
                     }
                 }
@@ -496,7 +642,7 @@ impl Parser {
         }
     }
 
-    fn parse_function(&mut self, tokens: &mut Vec<Token>) -> Global
+    fn parse_function(&mut self, tokens: &mut Vec<Token>, public: bool) -> Global
     {
         let id = if let Some(t) = tokens.pop()
         {
@@ -608,7 +754,7 @@ impl Parser {
             }
         }
 
-        Global::Fun(Function { lambda: false, main, id, params, ret, body })
+        Global::Fun(Function { public, lambda: false, main, id, params, ret, body })
     }
 
     fn parse_block(&mut self, tokens: &mut Vec<Token>, top_level: bool) -> Vec<Items>
@@ -934,7 +1080,7 @@ impl Parser {
         indices
     }
 
-    pub fn reporter(&self) -> &Reporter  { &self.rep }
-    pub fn output(&self)   -> &Program   { &self.prog }
+    pub fn reporter(&self) -> &Reporter          { &self.rep }
+    pub fn output(&self)   -> &Program           { println!("{:#?}", self.prog); &self.prog }
     pub fn output_mut(&mut self) -> &mut Program { &mut self.prog }
 }

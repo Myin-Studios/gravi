@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::{backend::Backend, error::{NyonError, Reporter}, lexer::{Operator, Type}, ast::*};
+use crate::{ast::*, backend::Backend, error::{NyonError, Reporter}, lexer::{Operator, Type}, symbol::{self, SymbolTable}};
 
 pub struct CGenerator
 {
@@ -50,9 +50,82 @@ impl CGenerator {
         }
     }
 
-    fn preprocess(&mut self, input: &Program) -> String
+    fn preprocess(&mut self, input: &Program, symbols: &SymbolTable) -> String
     {
         let mut res = String::new();
+
+        for scope in symbols.scopes.clone()
+        {
+            match scope.kind {
+                symbol::ScopeKind::Global => {
+                    for (id, sym) in scope.symbols
+                    {
+                        match sym {
+                            symbol::Symbol::Function(fun) => {
+                                if let Some(body) = fun.body.clone()
+                                {
+                                    for item in body.clone()
+                                    {
+                                        match item {
+                                            Items::Var(variable) => {
+                                                match variable {
+                                                    Var::Decl(decl) => {
+                                                        if let Some(v) = decl.value()
+                                                        {
+                                                            match v {
+                                                                Value::IfElse(_) | Value::Block(_, _) => {
+                                                                    res.push_str(&self.pregen_lambda(v));
+                                                                },
+                                                                _ => {}
+                                                            }
+                                                        }
+                                                    },
+                                                    Var::Var(var) => {
+                                                        if let Some(v) = &var.val
+                                                        {
+                                                            match v {
+                                                                Value::IfElse(_) | Value::Block(_, _) => {
+                                                                    res.push_str(&self.pregen_lambda(v));
+                                                                },
+                                                                _ => {}
+                                                            }
+                                                        }
+                                                    },
+                                                }
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                                
+                                res.push_str(&format!("{} nn_{}(", self.get_type(&fun.ret), id));
+                                for (i, (name, ty, mutable, _)) in fun.params.iter().enumerate()
+                                {
+                                    let n = self.register_var(name, ty.clone());
+
+                                    if !mutable { res.push_str("const "); }
+                                    res.push_str(&format!("{} {}", self.get_type(&ty), n));
+
+                                    if i < fun.params.len() - 1 { res.push_str(", "); }
+                                }
+                                res.push_str(")\n");
+                                if let Some(body) = fun.body.clone()
+                                {
+                                    let bd = self.gen_block(&body).0;
+                                    res.push_str(&format!("{{{}\n}}\n", bd));
+                                } else {
+                                    res.push_str(";\n");
+                                }
+                            },
+                            symbol::Symbol::Variable(_) => {
+                                // error!
+                            },
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
 
         for item in input.items()
         {
@@ -72,10 +145,22 @@ impl CGenerator {
                                     }
                                 }
                             },
+                            Items::Var(Var::Var(var)) => {
+                                if let Some(v) = &var.val
+                                {
+                                    match v {
+                                        Value::IfElse(_) | Value::Block(_, _) => {
+                                            res.push_str(&self.pregen_lambda(v));
+                                        },
+                                        _ => {}
+                                    }
+                                }
+                            },
                             _ => {}
                         }
                     }
                 }
+                Global::Import(spaces) => {},
             }
         }
 
@@ -96,23 +181,71 @@ impl CGenerator {
             Value::IfElse(ifelse) => {
                 let ret = self.get_type(ifelse.ret.as_ref().unwrap_or(&Type::None));
 
-                let if_id = format!("__nn_inline_if{}", self.block_counter);
-                self.inline.push_back(if_id.clone());
-                res.push_str(&format!("static inline {} {}() {{\n{}\n}}\n",
-                    ret, if_id, self.gen_block(ifelse.body()).0));
+                let refs = self.collect_refs(ifelse.body());
+                let params = refs.iter().map(|(m, t)| format!("{} {}", self.get_type(t), m)).collect::<Vec<_>>().join(", ");
+                let args   = refs.iter().map(|(m, _)| m.clone()).collect::<Vec<_>>().join(", ");
+
+                let id = format!("__nn_inline_if{}", self.block_counter);
+                self.inline.push_back(format!("{}({})", id, args));  // call completa, non solo il nome
+                res.push_str(&format!("static inline {} {}({}) {{\n{}\n}}\n",
+                    ret, id, params, self.gen_block(ifelse.body()).0));
 
                 if let Some(elif) = ifelse.else_if()
                 {
-                    let else_id = format!("__nn_inline_if{}", self.block_counter);
-                    self.inline.push_back(else_id.clone());
-                    res.push_str(&format!("static inline {} {}() {{\n{}\n}}\n",
-                        ret, else_id, self.gen_block(elif.body()).0));
+                    let refs = self.collect_refs(elif.body());
+                    let params = refs.iter().map(|(m, t)| format!("{} {}", self.get_type(t), m)).collect::<Vec<_>>().join(", ");
+                    let args   = refs.iter().map(|(m, _)| m.clone()).collect::<Vec<_>>().join(", ");
+
+                    let id = format!("__nn_inline_if{}", self.block_counter);
+                    self.inline.push_back(format!("{}({})", id, args));  // call completa, non solo il nome
+                    res.push_str(&format!("static inline {} {}({}) {{\n{}\n}}\n",
+                        ret, id, params, self.gen_block(elif.body()).0));
                 }
             },
             _ => {}
         }
 
         res
+    }
+
+    fn collect_refs(&self, items: &[Items]) -> Vec<(String, Type)> {
+        let mut refs = Vec::new();
+        for item in items {
+            match item {
+                Items::Ret(val) | Items::Expr(val) => self.collect_val_refs(val, &mut refs),
+                Items::Var(Var::Decl(d)) => { if let Some(v) = d.value() { self.collect_val_refs(v, &mut refs); } },
+                Items::Var(Var::Var(v)) => { if let Some(v) = &v.val { self.collect_val_refs(v, &mut refs); } },
+                _ => {}
+            }
+        }
+        refs
+    }
+
+    fn collect_val_refs(&self, val: &Value, refs: &mut Vec<(String, Type)>) {
+        match val {
+            Value::Expression(expr) => self.collect_expr_refs(expr, refs),
+            Value::Block(_, items) => { for i in items { self.collect_refs(items); } },
+            _ => {}
+        }
+    }
+
+    fn collect_expr_refs(&self, expr: &Expr, refs: &mut Vec<(String, Type)>) {
+        match expr {
+            Expr::Identifier(id) => {
+                if let Some((_, mangled, ty)) = self.name_map.iter().find(|(orig, _, _)| orig == id) {
+                    if !refs.iter().any(|(m, _)| m == mangled) {
+                        refs.push((mangled.clone(), ty.clone()));
+                    }
+                }
+            },
+            Expr::Binary(b) | Expr::Boolean(b) => {
+                self.collect_expr_refs(b.left(), refs);
+                self.collect_expr_refs(b.right(), refs);
+            },
+            Expr::Unary(u)   => self.collect_expr_refs(u.right(), refs),
+            Expr::Grouped(e) => self.collect_expr_refs(e, refs),
+            _ => {}
+        }
     }
 
     fn get_set_mangled(&mut self, name: &str) -> String
@@ -504,7 +637,7 @@ impl CGenerator {
 
     fn gen_if_ternary(&mut self, ifelse: &IfElse) -> String
     {
-        format!("({}) ? {}() : {}()",
+        format!("({}) ? {} : {}",   // niente () extra
             self.gen_expr(ifelse.condition().as_ref().unwrap_or(&Expr::Null)),
             self.inline.pop_front().unwrap_or_default(),
             self.inline.pop_front().unwrap_or_default())
@@ -665,13 +798,13 @@ impl CGenerator {
 }
 
 impl Backend for CGenerator {
-    fn process(&mut self, prog: &Program) {
+    fn process(&mut self, prog: &Program, symbols: &SymbolTable) {
         self.out.push_str("#include <stdio.h>\n");
         self.out.push_str("#include <stdlib.h>\n");
         self.out.push_str("#include <math.h>\n");
         self.out.push_str("#include <stdbool.h>\n\n");
 
-        let preprocessed = self.preprocess(prog);
+        let preprocessed = self.preprocess(prog, symbols);
         self.out.push_str(&preprocessed);
 
         let mut is_main = false;
@@ -684,6 +817,7 @@ impl Backend for CGenerator {
                     let s = self.gen_fun(fun);
                     self.out.push_str(&s);
                 },
+                Global::Import(spaces) => {},
             }
         }
 

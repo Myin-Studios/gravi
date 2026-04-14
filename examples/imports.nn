@@ -1,0 +1,7 @@
+with {functions::{add, div}, logical::example::inner};
+
+fun main()
+{
+    show(div(3.0, 2.0));
+    show(div(3.0, 0.0));
+}

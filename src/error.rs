@@ -2,6 +2,7 @@ use colored::Colorize;
 
 use crate::lexer::{Token, Type};
 
+#[derive(Clone, Debug)]
 pub enum Severity
 {
     Fatal,
@@ -10,6 +11,7 @@ pub enum Severity
     Info
 }
 
+#[derive(Clone, Debug)]
 pub enum Kind
 {
     FileNotFound(String),
@@ -34,6 +36,7 @@ pub enum Kind
     InvalidParameter(usize)
 }
 
+#[derive(Clone, Debug)]
 pub struct NyonError {
     kind:     Kind,
     severity: Severity,
@@ -145,6 +148,7 @@ impl Kind {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Reporter
 {
     messages: Vec<NyonError>,

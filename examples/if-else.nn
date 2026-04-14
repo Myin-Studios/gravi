@@ -4,23 +4,23 @@ fun main()
     var b = false;
     var c = false;
 
-    if !(a || b) || !c
-    {
-        show("Woohoo!");
-    }
-    else
-    {
-        show("Oh... Nooo!");
-    }
-    
-    if !false
-    {
-        show("Not false!");
-    }
-    else
-    {
-        show("Else not true!");
-    }
+    // if !(a || b) || !c
+    // {
+    //     show("Woohoo!");
+    // }
+    // else
+    // {
+    //     show("Oh... Nooo!");
+    // }
+    // 
+    // if !false
+    // {
+    //     show("Not false!");
+    // }
+    // else
+    // {
+    //     show("Else not true!");
+    // }
 
     if b
     {
@@ -37,11 +37,11 @@ fun main()
 
     var some: string = if a { ret "some string"; } else { ret "some other string"; };
 
-    var other = if false {
-        show("Oh, this is false!");
-        ret "FALSE";
-    } else {
-        show("Oh, this is true!");
-        ret "TRUE";
-    }
+    // var other = if false {
+    //     show("Oh, this is false!");
+    //     ret "FALSE";
+    // } else {
+    //     show("Oh, this is true!");
+    //     ret "TRUE";
+    // }
 }

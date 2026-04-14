@@ -28,6 +28,8 @@ pub enum Kind
     ExpectedReturnType,
     ExpectedValue,
     UnsupportedStatement,
+    
+    PrivateImport(String),
 
     TooManyEntry,
     TypeMismatch(Type, Type),
@@ -140,6 +142,8 @@ impl Kind {
             Kind::ExpectedReturnType => format!("Well... You maybe want \"{}\" as a type?\nNot after putting that ':'!", "none".bright_blue().bold()),
             Kind::ExpectedValue => "Go, go! Tell me more! Equals to...?".to_string(),
             Kind::UnsupportedStatement => "Mhmhmh! Not here, not now...".to_string(),
+
+            Kind::PrivateImport(name) => format!("Where where? I can't see it... Maybe {} is private?", name.bright_blue().bold()),
 
             Kind::TooManyEntry => format!("W-Wait wait wait! I found too many {}", "entry points".bright_blue().bold()),
             Kind::TypeMismatch(expected, found) => format!("A-A-A... You mismatched the type! Expected {}, but found {}!", expected.to_string().green().bold(), found.to_string().red().bold()),

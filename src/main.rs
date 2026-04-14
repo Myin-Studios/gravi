@@ -127,6 +127,8 @@ fn build(input: String, filename: &str, ty: BackendType, target: Target, flag: B
     if p.reporter().has_errors() { std::process::exit(1); }
 
     let mut r = resolve(p.output());
+    r.reporter().fire_all();
+    if r.reporter().has_errors() { std::process::exit(1); }
 
     let mut tc = typecheck(p.output_mut(), r.output());
     tc.reporter().fire_all();

@@ -1,10 +1,11 @@
 use std::path::Path;
 
-use crate::{ast::{FunKind, Global, Program, Space}, lex, parse, symbol::{self, FunctionSym, SymbolTable}};
+use crate::{ast::{FunKind, Global, Program, Space}, error::{NyonError, Reporter}, lex, parse, symbol::{self, FunctionSym, SymbolTable}};
 
 pub struct Resolver
 {
-    symbols: SymbolTable
+    symbols: SymbolTable,
+    rep: Reporter,
 }
 
 impl Resolver {
@@ -13,6 +14,7 @@ impl Resolver {
         Self
         {
             symbols: SymbolTable::new(),
+            rep: Reporter::new(),
         }
     }
 
@@ -92,6 +94,7 @@ impl Resolver {
                         Global::Fun(FunKind::Custom(f)) | Global::Fun(FunKind::Entry(f)) => {
                             match sub.clone() {
                                 crate::ast::Subspace::All => {
+                                    if !f.public { self.rep.add(NyonError::throw(crate::error::Kind::PrivateImport(f.id.clone()))); }
                                     self.symbols.add(f.identifier(), symbol::Symbol::Function(FunctionSym {
                                                                                     params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone())).collect(),
                                                                                     ret:    f.ret.clone(),
@@ -100,6 +103,7 @@ impl Resolver {
                                                                                 }));
                                 },
                                 crate::ast::Subspace::Some(spaces) => {
+                                    if !f.public { self.rep.add(NyonError::throw(crate::error::Kind::PrivateImport(f.id.clone()))); }
                                     if spaces.iter().any(|s| s.name == f.id) {
                                         self.symbols.add(f.identifier(), symbol::Symbol::Function(FunctionSym {
                                                                                     params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone())).collect(),
@@ -107,11 +111,6 @@ impl Resolver {
                                                                                     public: f.public,
                                                                                     body:   Some(f.body.clone()),
                                                                                 }));
-                                    }
-
-                                    if let Some(_) = self.symbols.find("main")
-                                    {
-                                        println!("found main!");
                                     }
                                 },
                             }
@@ -124,6 +123,11 @@ impl Resolver {
         }
         else {
         }
+    }
+    
+    pub fn reporter(&self) -> &Reporter
+    {
+        &self.rep
     }
     
     pub fn output(&mut self) -> &mut SymbolTable

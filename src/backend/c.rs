@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 
+use colored::Colorize;
+
 use crate::{ast::*, backend::Backend, error::{NyonError, Reporter}, lexer::{Operator, Type}, symbol::{self, SymbolTable}};
 
 pub struct CGenerator
@@ -112,7 +114,7 @@ impl CGenerator {
                                 if let Some(body) = fun.body.clone()
                                 {
                                     let bd = self.gen_block(&body).0;
-                                    res.push_str(&format!("{{{}\n}}\n", bd));
+                                    res.push_str(&format!("{{\n{}\n}}\n", bd));
                                 } else {
                                     res.push_str(";\n");
                                 }
@@ -130,7 +132,7 @@ impl CGenerator {
         for item in input.items()
         {
             match item {
-                Global::Fun(fun) => {
+                Global::Fun(FunKind::Custom(fun)) | Global::Fun(FunKind::Entry(fun)) => {
                     for elem in fun.body()
                     {
                         match elem {
@@ -159,8 +161,8 @@ impl CGenerator {
                             _ => {}
                         }
                     }
-                }
-                Global::Import(spaces) => {},
+                },
+                Global::Import(_) => {},
             }
         }
 
@@ -224,7 +226,7 @@ impl CGenerator {
     fn collect_val_refs(&self, val: &Value, refs: &mut Vec<(String, Type)>) {
         match val {
             Value::Expression(expr) => self.collect_expr_refs(expr, refs),
-            Value::Block(_, items) => { for i in items { self.collect_refs(items); } },
+            Value::Block(_, items) => { self.collect_refs(items); },
             _ => {}
         }
     }
@@ -574,7 +576,7 @@ impl CGenerator {
                                 res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
                             }
                         },
-                        Value::List(_, indices) => {},
+                        Value::List(_, _) => {},
                     }
                 },
                 Items::Stop => {
@@ -604,7 +606,7 @@ impl CGenerator {
             Value::IfElse(ifelse)       => res.push_str(&self.gen_if_ternary(ifelse)),
             Value::Null                 => {},
             Value::Loop(_) => {},
-            Value::List(_, indices) => {},
+            Value::List(_, _) => {},
         }
 
         res
@@ -647,31 +649,24 @@ impl CGenerator {
     {
         let mut res: String = String::new();
 
-        let ret = if fun.main() { "int".to_string() } else { self.get_type(fun.ret()) };
-        let id  = if fun.identifier() == "main" {
-            "main".to_string()
-        } else {
-            format!("nn_{}", fun.identifier())
-        };
+        let ret = self.get_type(fun.ret());
+        let id  = format!("nn_{}", fun.identifier());
 
         let mut params = String::new();
 
-        if !fun.main()
+        for i in 0..fun.params().len()
         {
-            for i in 0..fun.params().len()
-            {
-                let m   = if fun.params()[i].mutable() { "" } else { "const " };
-                let t   = self.get_type(fun.params()[i].ty());
-                let pid = fun.params()[i].identifier();
-                let v   = fun.params()[i].value();
+            let m   = if fun.params()[i].mutable() { "" } else { "const " };
+            let t   = self.get_type(fun.params()[i].ty());
+            let pid = fun.params()[i].identifier();
+            let v   = fun.params()[i].value();
 
-                if v.is_none() // C doesn't support default values
-                {
-                    if i == fun.params().len() - 1 {
-                        params.push_str(&format!(" {}{} {}", m, t, pid));
-                    } else {
-                        params.push_str(&format!("{}{} {},", m, t, pid));
-                    }
+            if v.is_none() // C doesn't support default values
+            {
+                if i == fun.params().len() - 1 {
+                    params.push_str(&format!(" {}{} {}", m, t, pid));
+                } else {
+                    params.push_str(&format!("{}{} {},", m, t, pid));
                 }
             }
         }
@@ -812,17 +807,24 @@ impl Backend for CGenerator {
         for item in prog.items()
         {
             match item {
-                Global::Fun(fun) => {
-                    is_main = fun.main();
+                Global::Fun(FunKind::Custom(fun)) => {
                     let s = self.gen_fun(fun);
                     self.out.push_str(&s);
                 },
-                Global::Import(spaces) => {},
+                Global::Fun(FunKind::Entry(fun)) => {
+                    is_main = true;
+                    let bd = self.gen_block(fun.body()).0;
+                    self.out.push_str(&format!("int main()\n{{\n{}\n\treturn 0;\n}}", bd));
+                },
+                Global::Import(_) => {},
             }
         }
 
         if !is_main
         {
+            self.rep.add(NyonError::throw(crate::error::Kind::EntryNotFound)
+                                    .severity(crate::error::Severity::Warning)
+                                    .hint(&format!("Write one and only one function {}. Not 0, not 2, not N, just 1!\n\tFor now I'll generate it for you... but be careful next time!", "main".bright_blue().bold())));
             self.out.push_str("int main()\n{\n");
             self.out.push_str("\treturn 0;\n");
             self.out.push_str("}\n");

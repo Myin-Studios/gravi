@@ -10,7 +10,7 @@ pub struct Program
 pub enum Global
 {
     Import(Vec<Space>),
-    Fun(Function),
+    Fun(FunKind),
     // Class,
     // Inter,
 }
@@ -29,6 +29,13 @@ pub enum Subspace
 {
     All,
     Some(Vec<Space>),
+}
+
+#[derive(Clone, Debug)]
+pub enum FunKind
+{
+    Entry(Function),
+    Custom(Function),
 }
 
 #[derive(Clone, Debug)]
@@ -241,7 +248,6 @@ pub struct Function
 {
     pub public: bool,
     pub lambda: bool,
-    pub main:   bool,
     pub id:     String,
     pub params: Vec<VarDecl>,
     pub ret:    Type,
@@ -255,7 +261,6 @@ impl Function {
         {
             public: false,
             lambda: false,
-            main:   false,
             id:     "".to_string(),
             params: Vec::new(),
             ret:    Type::None,
@@ -264,7 +269,6 @@ impl Function {
     }
 
     pub fn lambda(&self)     -> bool     { self.lambda }
-    pub fn main(&self)       -> bool     { self.main }
     pub fn identifier(&self) -> &str     { &self.id }
     pub fn params(&self)     -> &[VarDecl] { &self.params }
     pub fn ret(&self)        -> &Type    { &self.ret }

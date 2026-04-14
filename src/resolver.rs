@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{ast::{Global, Program, Space}, lex, parse, parser::Parser, symbol::{self, FunctionSym, SymbolTable}, typecheck};
+use crate::{ast::{FunKind, Global, Program, Space}, lex, parse, symbol::{self, FunctionSym, SymbolTable}};
 
 pub struct Resolver
 {
@@ -28,7 +28,7 @@ impl Resolver {
                         self.resolve_space(&spaces[i], "examples");
                     }
                 },
-                Global::Fun(f) => {
+                Global::Fun(FunKind::Custom(f)) => {
                     self.symbols.add(f.identifier(), symbol::Symbol::Function(FunctionSym {
                                                                                     params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone())).collect(),
                                                                                     ret:    f.ret.clone(),
@@ -76,7 +76,7 @@ impl Resolver {
                 l.reporter().fire_all();
                 if l.reporter().has_errors() { std::process::exit(1); }
 
-                let mut p = parse(l.tokens_mut());                
+                let p = parse(l.tokens_mut());                
                 p.reporter().fire_all();
                 if p.reporter().has_errors() { std::process::exit(1); }
 
@@ -89,7 +89,7 @@ impl Resolver {
                                 self.resolve_space(space, &name);
                             }
                         },
-                        Global::Fun(f) => {
+                        Global::Fun(FunKind::Custom(f)) | Global::Fun(FunKind::Entry(f)) => {
                             match sub.clone() {
                                 crate::ast::Subspace::All => {
                                     self.symbols.add(f.identifier(), symbol::Symbol::Function(FunctionSym {
@@ -107,6 +107,11 @@ impl Resolver {
                                                                                     public: f.public,
                                                                                     body:   Some(f.body.clone()),
                                                                                 }));
+                                    }
+
+                                    if let Some(_) = self.symbols.find("main")
+                                    {
+                                        println!("found main!");
                                     }
                                 },
                             }

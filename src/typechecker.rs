@@ -1,3 +1,5 @@
+use colored::Colorize;
+
 pub use crate::ast::*;
 use crate::{error::{NyonError, Reporter}, lexer::Type, symbol::{self, SymbolTable, VariableSym}};
 
@@ -36,11 +38,20 @@ impl Checker {
         for item in prog.items.iter_mut()
         {
             match item {
-                Global::Fun(fun) => {
+                Global::Fun(FunKind::Custom(fun)) => {
                     symbol.push(crate::symbol::ScopeKind::Function(fun.id.clone(), fun.ret.clone()));
                     self.check_fun(fun, symbol);
                     symbol.pop();
                 },
+                Global::Fun(FunKind::Entry(fun)) => {
+                    if let Some(_) = symbol.find("main")
+                    {
+                        self.rep.add(NyonError::throw(crate::error::Kind::TooManyEntry)
+                                                .hint(&format!("Try writing only one function {}", "main".bright_blue().bold())));
+                    }
+
+                    self.check_fun(fun, symbol);
+                }
                 _ => {},
             }
         }
@@ -133,6 +144,15 @@ impl Checker {
                         },
                     }
                 },
+                Items::Expr(Value::Call(id, vals)) => {
+                    let param_types: Vec<Type> = if let Some(symbol::Symbol::Function(f)) = symbol.find(id) {
+                        f.params.iter().map(|(_, ty, _, _)| ty.clone()).collect()
+                    } else {
+                        vec![]
+                    };
+                    
+                    self.check_call(vals, &param_types, symbol);
+                },
                 Items::Expr(Value::Block(_, b)) => {
                     symbol.push(symbol::ScopeKind::Block);
                     self.check_body(b, symbol);
@@ -164,7 +184,15 @@ impl Checker {
                 ty = Type::StringLiteral;
             },
             Value::Boolean(_) => ty = Type::Boolean,
-            Value::Call(_, _values) => {},
+            Value::Call(id, vals) => {
+                let param_types: Vec<Type> = if let Some(symbol::Symbol::Function(f)) = symbol.find(id) {
+                    f.params.iter().map(|(_, ty, _, _)| ty.clone()).collect()
+                } else {
+                    vec![]
+                };
+
+                self.check_call(vals, &param_types, symbol);
+            },
             Value::Null => ty = Type::None,
             Value::Block(bty, b) => {
                 symbol.push(symbol::ScopeKind::Block);
@@ -318,6 +346,23 @@ impl Checker {
         }
     }
 
+    fn is_compatible(&self, found: &Type, expected: &Type) -> bool {
+        if found == expected { return true; }
+        
+        match (found, expected) {
+            (Type::Numeric(f), Type::Numeric(e)) => {
+                use crate::lexer::Numeric::*;
+                matches!((f, e),
+                    (U8 | U16 | U32 | U64, U8 | U16 | U32 | U64) |
+                    (I8 | I16 | I32 | I64, I8 | I16 | I32 | I64) |
+                    (F16 | F32 | F64,      F16 | F32 | F64)
+                )
+            },
+            _ => false,
+        }
+    }
+
+
     fn check_range(&mut self, range: &mut Range, expected: &Type, symbol: &mut SymbolTable) -> Type
     {
         let ty: Type;
@@ -384,6 +429,20 @@ impl Checker {
 
         ty
     }
+
+    fn check_call(&mut self, vals: &mut Vec<Value>, params: &[Type], symbol: &mut SymbolTable) -> Type {
+        for (i, val) in vals.iter_mut().enumerate() {
+            let param_ty = params.get(i).unwrap_or(&Type::None);
+            let ty = self.check_val(val, &Type::None, symbol);
+            
+            if !self.is_compatible(&ty, param_ty) && param_ty != &Type::None {
+                self.rep.add(NyonError::throw(crate::error::Kind::TypeMismatch(param_ty.clone(), ty)));
+            }
+        }
+
+        Type::None
+    }
+
 
     pub fn reporter(&mut self) -> &Reporter
     {

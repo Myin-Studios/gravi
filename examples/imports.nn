@@ -1,7 +1,7 @@
-with {functions::{add, div}, logical::example::inner};
+with {functions::{add, div/*, main <- uncomment this to see the magic result! (an error saying "Too many entry points"*/}, logical::example::inner};
 
 fun main()
 {
-    show(div(3.0, 2.0));
-    show(div(3.0, 0.0));
+    // show(div(3, 2)); // this throws two errors saying "Expected f32, but found u8!"
+    show(div(3.0, 0.0)); // see "div" function: it checks if b is zero and changes it to 1 if true
 }

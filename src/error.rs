@@ -29,8 +29,10 @@ pub enum Kind
     ExpectedValue,
     UnsupportedStatement,
 
+    TooManyEntry,
     TypeMismatch(Type, Type),
 
+    EntryNotFound,
     UnsupportedExpression,
     UnsupportedReturnType,
     InvalidParameter(usize)
@@ -139,8 +141,10 @@ impl Kind {
             Kind::ExpectedValue => "Go, go! Tell me more! Equals to...?".to_string(),
             Kind::UnsupportedStatement => "Mhmhmh! Not here, not now...".to_string(),
 
+            Kind::TooManyEntry => format!("W-Wait wait wait! I found too many {}", "entry points".bright_blue().bold()),
             Kind::TypeMismatch(expected, found) => format!("A-A-A... You mismatched the type! Expected {}, but found {}!", expected.to_string().green().bold(), found.to_string().red().bold()),
 
+            Kind::EntryNotFound => "Hmm... Where are you?? My dear entry point!".to_string(),
             Kind::UnsupportedExpression => "Mh... Why would you like to do this? It's not allowed here!".to_string(),
             Kind::UnsupportedReturnType => "Are you kidding me? What's that?! An unsupported return type!".to_string(),
             Kind::InvalidParameter(pos) => format!("Do whatever you want, but the parameter at the position {} is not valid!", pos),

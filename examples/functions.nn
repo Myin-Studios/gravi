@@ -25,7 +25,7 @@ fun return_string(str: string): string
     ret str;
 }
 
-fun main()
+pub fun main()
 {
     // div(1, 2); // Items::Call(Expr::Literal(1), Expr::Literal(2))
     

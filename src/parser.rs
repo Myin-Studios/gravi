@@ -1,6 +1,6 @@
 use colored::Colorize;
 
-use crate::{resolver, error::{NyonError, Reporter}, lexer::*, ast::*};
+use crate::{error::{NyonError, Reporter}, lexer::*, ast::*};
 
 #[derive(Clone, Debug)]
 pub struct Parser
@@ -57,8 +57,6 @@ impl Parser {
                                     loop {
                                         if let Some(closing) = tokens.last()
                                         {
-                                            println!("{:#?}", closing.kind());
-
                                             if matches!(closing.kind(), TokenKind::Punctuation(Punctuation::RBrace) | TokenKind::Punctuation(Punctuation::SemiColon))
                                             {
                                                 tokens.pop();
@@ -754,7 +752,12 @@ impl Parser {
             }
         }
 
-        Global::Fun(Function { public, lambda: false, main, id, params, ret, body })
+        if main {
+            Global::Fun(FunKind::Entry(Function { public, lambda: false, id: "main".to_string(), params, ret, body }))
+        }
+        else {
+            Global::Fun(FunKind::Custom(Function { public, lambda: false, id, params, ret, body }))
+        }
     }
 
     fn parse_block(&mut self, tokens: &mut Vec<Token>, top_level: bool) -> Vec<Items>
@@ -1081,6 +1084,6 @@ impl Parser {
     }
 
     pub fn reporter(&self) -> &Reporter          { &self.rep }
-    pub fn output(&self)   -> &Program           { println!("{:#?}", self.prog); &self.prog }
+    pub fn output(&self)   -> &Program           { &self.prog }
     pub fn output_mut(&mut self) -> &mut Program { &mut self.prog }
 }

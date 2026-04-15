@@ -148,11 +148,18 @@ pub enum Value
     StringLiteral(String),
     Boolean(BoolValue),
     Call(String, Vec<Value>),
-    List(String, Vec<Vec<Value>>), // vector: a[index] --- matrix: a[row; column] --- array as result: a[i1, i1, ... in]
+    List(List), // vector: a[index] --- matrix: a[row; column] --- array as result: a[i1, i1, ... in]
     Block(Type, Vec<Items>),
     IfElse(IfElse),
     Loop(Loop),
     Null
+}
+
+#[derive(Debug, Clone)]
+pub enum List
+{
+    Decl(Expr, Option<Vec<Vec<Value>>>),
+    Use(String, Vec<Vec<Value>>),
 }
 
 /// Single struct used for both arithmetic and logical binary expressions.

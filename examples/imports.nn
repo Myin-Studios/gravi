@@ -2,6 +2,39 @@ with {functions::{add, div/*, main <- uncomment this to see the magic result! (a
 
 fun main()
 {
+    show("Testing imported functions (calling div(3.0, 0.0)):")
     // show(div(3, 2)); // this throws two errors saying "Expected f32, but found u8!"
     show(div(3.0, 0.0)); // see "div" function: it checks if b is zero and changes it to 1 if true
+
+    mut var l1 = [5](3, 1, 4, 2, 5; 1, 2, 3, 4, 5);
+    mut var l2;
+
+    // code ...
+
+    l2 = [5](5, 4, 3, 2, 1);
+
+    mut var s: string = "hello world!";
+
+    var val = l2[0, 2, 4];
+    var sval: string = [2](s[0], s[1]);
+    var sval2: string = s[2, 3, 4];
+    // var sval3: string = s[0::4]; // "hello" <- to be implemented!
+    
+    show("\nFor printing:")
+
+    loop i in 0::2
+    {
+        show(val[i]);
+    }
+    
+    show("\nList printing (val[0, 1, 2]):")
+
+    show(val[0, 1, 2]);
+
+    show("\nString printing:")
+    show(sval);
+    show(sval2);
+
+    // show("\nString printing char by char:")
+    // loop i in 0::1 { show(sval[i]); } <- bug! this doesn't work
 }

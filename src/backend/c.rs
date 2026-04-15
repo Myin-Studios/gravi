@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 use colored::Colorize;
 
@@ -9,7 +9,7 @@ pub struct CGenerator
     out:           String,
     rep:           Reporter,
     block_counter: usize,
-    name_map:      Vec<(String, String, Type)>,  // (original, mangled, type)
+    name_map:      Vec<(String, String, Type, bool)>,  // (original, mangled, type, is_list)
     inline:        VecDeque<String>,
 }
 
@@ -68,7 +68,7 @@ impl CGenerator {
                                     let params_start = self.name_map.len();
 
                                     for (_, (name, ty, _, _)) in fun.params.iter().enumerate() {
-                                        self.register_var(name, ty.clone());
+                                        self.register_var(name, ty.clone(), false);
                                     }
 
                                     let mut helpers = String::new();
@@ -231,7 +231,7 @@ impl CGenerator {
     fn collect_expr_refs(&self, expr: &Expr, refs: &mut Vec<(String, Type)>) {
         match expr {
             Expr::Identifier(id) => {
-                if let Some((_, mangled, ty)) = self.name_map.iter().find(|(orig, _, _)| orig == id) {
+                if let Some((_, mangled, ty, _)) = self.name_map.iter().find(|(orig, _, _, _)| orig == id) {
                     if !refs.iter().any(|(m, _)| m == mangled) {
                         refs.push((mangled.clone(), ty.clone()));
                     }
@@ -249,33 +249,33 @@ impl CGenerator {
 
     fn get_set_mangled(&mut self, name: &str) -> String
     {
-        if let Some((_, mangled, _)) = self.name_map.iter().find(|(orig, _, _)| orig == name)
+        if let Some((_, mangled, _, _)) = self.name_map.iter().find(|(orig, _, _, _)| orig == name)
         {
             return mangled.clone();
         }
 
         let mangled = format!("__b{}_{}", self.block_counter, name);
-        self.name_map.push((name.to_string(), mangled.clone(), Type::None));
+        self.name_map.push((name.to_string(), mangled.clone(), Type::None, false));
         mangled
     }
 
-    fn register_var(&mut self, name: &str, ty: Type) -> String
+    fn register_var(&mut self, name: &str, ty: Type, is_list: bool) -> String
     {
-        if let Some((_, mangled, _)) = self.name_map.iter().find(|(orig, _, _)| orig == name)
+        if let Some((_, mangled, _, _)) = self.name_map.iter().find(|(orig, _, _, _)| orig == name)
         {
             return mangled.clone();
         }
 
         let mangled = format!("__b{}_{}", self.block_counter, name);
-        self.name_map.push((name.to_string(), mangled.clone(), ty));
+        self.name_map.push((name.to_string(), mangled.clone(), ty, is_list));
         mangled
     }
 
     fn type_of_var(&self, name: &str) -> Type
     {
         self.name_map.iter()
-            .find(|(orig, _, _)| orig == name)
-            .map(|(_, _, ty)| ty.clone())
+            .find(|(orig, _, _, _)| orig == name)
+            .map(|(_, _, ty, _)| ty.clone())
             .unwrap_or(Type::None)
     }
 
@@ -298,6 +298,13 @@ impl CGenerator {
             Type::Character     => "%c",
             _ => "%s",
         }
+    }
+
+    fn is_list_var(&self, mangled: &str) -> bool {
+        self.name_map.iter()
+            .find(|(_, m, _, _)| m == mangled)
+            .map(|(_, _, _, is_list)| *is_list)
+            .unwrap_or(false)
     }
 
     fn gen_var(&mut self, var: &VarDecl) -> String
@@ -383,21 +390,70 @@ impl CGenerator {
                         mutable, ty, var.identifier(), self.gen_if_ternary(ifelse)));
                 },
                 Value::Loop(_) => {},
-                Value::List(id, indices) => {
-                    if indices[0].len() > 1
-                    {
-                        // ignore for now! just for a future support of matrices!
+                Value::List(List::Decl(size, values)) => {
+                    if let Some(vals) = values {
+                        let flat: Vec<&Value> = vals.iter().flatten().collect();
+
+                        if var.ty() == &Type::StringLiteral {
+                            let n = flat.len();
+                            res.push_str(&format!("\tint sz_{} = {};\n", var.identifier(), n));
+
+                            res.push_str(&format!("\tchar {}[{}] = {{", var.identifier(), n + 1));
+                            
+                            for v in flat {
+                                res.push_str(&self.gen_val(v));
+                                res.push_str(", ");
+                            }
+
+                            res.push_str("'\\0'};\n");
+                        } else {
+                            res.push_str(&format!("\tint sz_{} = {};\n", var.identifier(), self.gen_expr(size)));
+                            res.push_str(&format!("\t{} {}[{}] = {{", ty, var.identifier(), self.gen_expr(size)));
+                            
+                            for (i, v) in flat.iter().enumerate() {
+                                res.push_str(&self.gen_val(v));
+                                if i < flat.len() - 1 { res.push_str(", "); }
+                            }
+                            
+                            res.push_str("};\n");
+                        }
                     }
-                    else {
-                        let list_name = self.get_set_mangled(id);
-                        let index = &indices[0][0];
-                        res.push_str(&format!("\t{}{} {} = {}[{}];\n", mutable, ty, var.identifier(), list_name, self.gen_val(index)));
+                }
+                Value::List(List::Use(id, vals)) => {
+                    let flat: Vec<&Value> = vals.iter().flatten().collect();
+
+                    if var.ty() == &Type::StringLiteral {
+                        let n = flat.len();
+                        
+                        res.push_str(&format!("\tint sz_{} = {};\n", var.identifier(), n));
+                        res.push_str(&format!("\tchar {}[{}] = {{", var.identifier(), n + 1));
+                        
+                        for v in flat {
+                            res.push_str(&format!("{}[{}]", self.get_set_mangled(id), self.gen_val(v)));
+                            res.push_str(", ");
+                        }
+
+                        res.push_str("'\\0'};\n");
+                    } else {
+                        res.push_str(&format!("\tint sz_{} = {};\n", var.identifier(), flat.len()));
+                        res.push_str(&format!("\t{} {}[{}] = {{", ty, var.identifier(), flat.len()));
+                        
+                        for (i, v) in flat.iter().enumerate() {
+                            res.push_str(&format!("{}[{}]", self.get_set_mangled(id), self.gen_val(v)));
+                            if i < flat.len() - 1 { res.push_str(", "); }
+                        }
+                        
+                        res.push_str("};\n");
                     }
                 },
             }
         }
         else {
-            res.push_str(&format!("\t{}{} {};\n", mutable, ty, var.identifier()));
+            if self.is_list_var(var.identifier()) {
+                res.push_str(&format!("\t{}{}* {} = NULL;\n", mutable, ty, var.identifier()));
+            } else {
+                res.push_str(&format!("\t{}{} {};\n", mutable, ty, var.identifier()));
+            }
         }
 
         res
@@ -471,6 +527,15 @@ impl CGenerator {
         let mut res = String::new();
         let mut id  = String::new();
 
+        let future_list_names: HashSet<String> = items.iter()
+        .filter_map(|item| match item {
+            Items::Var(Var::Var(v)) if matches!(&v.val, Some(Value::List(_))) => {
+                Some(v.name.clone())
+            },
+            _ => None,
+        })
+        .collect();
+        
         for item in items
         {
             match item {
@@ -480,15 +545,43 @@ impl CGenerator {
                 Items::Var(v) => {
                     match v {
                         Var::Decl(v) => {
+                            let _is_list = if let Some(val) = &v.val
+                            {
+                                if matches!(val, Value::List(_))
+                                {
+                                    true
+                                }
+                                else {
+                                    false
+                                }
+                            }
+                            else {
+                                false
+                            };
+
                             let mut mangled = v.clone();
-                            mangled.id = self.register_var(&v.id, v.ty().clone());
+                            let is_list = if let Some(val) = &v.val {
+                                matches!(val, Value::List(_))
+                            } else {
+                                future_list_names.contains(&v.id)
+                            };
+                            mangled.id = self.register_var(&v.id, v.ty().clone(), is_list);
                             res.push_str(&self.gen_var(&mangled));
                         },
                         Var::Var(v) => {
-                            if let Some(val) = &v.val
-                            {
+                            if let Some(val) = &v.val {
                                 let mangled = self.get_set_mangled(&v.name);
-                                res.push_str(&format!("\t{} = {};\n", mangled, self.gen_val(val)));
+                                match val {
+                                    Value::List(List::Decl(_, Some(values))) => {
+                                        let ty = self.get_type(&self.type_of_var(&v.name)); // ← v.name = originale
+                                        let vals_str = values.iter().flatten()
+                                            .map(|v| self.gen_val(v))
+                                            .collect::<Vec<_>>()
+                                            .join(", ");
+                                        res.push_str(&format!("\t{} = ({}[]){{{}}};\n", mangled, ty, vals_str));
+                                    },
+                                    _ => res.push_str(&format!("\t{} = {};\n", mangled, self.gen_val(val))),
+                                }
                             }
                         }
                     }
@@ -550,7 +643,7 @@ impl CGenerator {
                                     else if e < s { s = s - 1; }
                                 }
 
-                                let id = self.register_var(cond.identifier(), cond.ty().to_owned());
+                                let id = self.register_var(cond.identifier(), cond.ty().to_owned(), false);
 
                                 if s < e
                                 {
@@ -573,7 +666,7 @@ impl CGenerator {
                                 res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
                             }
                         },
-                        Value::List(_, _) => {},
+                        Value::List(_) => {},
                     }
                 },
                 Items::Stop => {
@@ -603,7 +696,15 @@ impl CGenerator {
             Value::IfElse(ifelse)       => res.push_str(&self.gen_if_ternary(ifelse)),
             Value::Null                 => {},
             Value::Loop(_) => {},
-            Value::List(_, _) => {},
+            Value::List(List::Use(id, vals)) => {
+                let v: Vec<&Value> = vals.iter().flatten().collect();
+                for (i, val) in v.clone().into_iter().enumerate()
+                {
+                    res.push_str(&format!("{}[{}]", self.get_set_mangled(id), self.gen_val(val)));
+                    if i < v.len() - 1 { res.push_str(", "); }
+                }
+            },
+            _ => {}
         }
 
         res
@@ -698,7 +799,7 @@ impl CGenerator {
                 Value::Block(_, _) => {},
                 Value::IfElse(_)   => {},
                 Value::Loop(_)     => {},
-                Value::List(_, _)  => {},
+                Value::List(_)     => {},
             }
 
             if i < vals.len() - 1 {
@@ -709,54 +810,62 @@ impl CGenerator {
         res
     }
 
-    fn gen_show(&mut self, vals: &[Value]) -> String
-    {
-        let mut res: String = String::from("\tprintf(");
+    fn gen_show(&mut self, vals: &[Value]) -> String {
+        let mut res = String::new();
 
-        for val in vals
-        {
+        for val in vals {
             match val {
                 Value::Expression(Expr::Identifier(name)) => {
-                    let ty      = self.type_of_var(name);
                     let mangled = self.get_set_mangled(name);
+                    let ty      = self.type_of_var(name);
 
-                    if ty == Type::Boolean {
-                        res.push_str(&format!("\"%s\\n\", {} ? \"true\" : \"false\"", mangled));
+                    if self.is_list_var(&mangled) {
+                        if ty == Type::StringLiteral {
+                            res.push_str(&format!("\tprintf(\"%s\\n\", {});\n", mangled));
+                        } else {
+                            let fmt = Self::printf_fmt(&ty);
+                            res.push_str(&format!(
+                                "\tfor (int __i = 0; __i < sz_{}; __i++) {{\n\t\tprintf(\"{}\\n\", {}[__i]);\n\t}}\n",
+                                mangled, fmt, mangled
+                            ));
+                        }
+                    } else if ty == Type::Boolean {
+                        res.push_str(&format!("\tprintf(\"%s\\n\", {} ? \"true\" : \"false\");\n", mangled));
                     } else {
-                        let fmt = Self::printf_fmt(&ty);
-                        res.push_str(&format!("\"{}\\n\", {}", fmt, mangled));
+                        res.push_str(&format!("\tprintf(\"{}\\n\", {});\n", Self::printf_fmt(&ty), mangled));
+                    }
+                },
+                Value::List(List::Use(id, values)) => {
+                    let mangled = self.get_set_mangled(id);
+                    let fmt     = Self::printf_fmt(&self.type_of_var(id));
+                    let flat: Vec<&Value> = values.iter().flatten().collect();
+
+                    for v in &flat {
+                        res.push_str(&format!("\tprintf(\"{}\\n\", {}[{}]);\n",
+                            fmt, mangled, self.gen_val(v)));
                     }
                 },
                 Value::Expression(Expr::Literal(lit)) => {
-                    if lit.contains('.') {
-                        res.push_str(&format!("\"%g\\n\", {}", lit));
-                    } else {
-                        res.push_str(&format!("\"%d\\n\", {}", lit));
-                    }
+                    let fmt = if lit.contains('.') { "%g" } else { "%d" };
+                    res.push_str(&format!("\tprintf(\"{}\\n\", {});\n", fmt, lit));
                 },
                 Value::Expression(expr) => {
-                    let generated = self.gen_expr(expr);
-                    res.push_str(&format!("\"%g\\n\", {}", generated));
+                    res.push_str(&format!("\tprintf(\"%g\\n\", {});\n", self.gen_expr(expr)));
                 },
                 Value::StringLiteral(s) => {
-                    res.push_str(&format!("\"%s\\n\", \"{}\"", s));
+                    res.push_str(&format!("\tprintf(\"%s\\n\", \"{}\");\n", s));
                 },
                 Value::Boolean(b) => {
                     let bstr = if b == &BoolValue::True { "true" } else { "false" };
-                    res.push_str(&format!("\"%s\\n\", \"{}\"", bstr));
+                    res.push_str(&format!("\tprintf(\"%s\\n\", \"{}\");\n", bstr));
                 },
                 Value::Call(id, values) => {
-                    res.push_str(&format!("\"%g\\n\", nn_{}({})", id, self.gen_call(values)));
+                    res.push_str(&format!("\tprintf(\"%g\\n\", nn_{}({}));\n", id, self.gen_call(values)));
                 },
-                Value::Null        => res.push_str("\"\""),
-                Value::Block(_, _) => {},
-                Value::IfElse(_)   => {},
-                Value::Loop(_)     => {},
-                Value::List(_, _)  => {},
+                _ => {}
             }
         }
 
-        res.push_str(");\n");
         res
     }
 
@@ -777,7 +886,7 @@ impl CGenerator {
             Value::IfElse(_)   => String::new(),
             Value::Null        => String::new(),
             Value::Loop(_)     => String::new(),
-            Value::List(_, _)  => String::new(),
+            Value::List(_)     => String::new(),
         };
 
         format!("\treturn {};\n", inner)

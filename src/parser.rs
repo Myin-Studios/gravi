@@ -245,7 +245,7 @@ impl Parser {
                             Punctuation::RParen => {
                                 tokens.push(t);
                                 break;
-                            }
+                            },
                             _ => break,
                         }
                     },
@@ -289,7 +289,7 @@ impl Parser {
                     match val.kind() {
                         TokenKind::Identifier(_) | TokenKind::Value(_) |
                         TokenKind::Operator(_) | TokenKind::Keyword(Keyword::If) |
-                        TokenKind::Punctuation(Punctuation::LBrace) => Some(self.parse_value(tokens)),
+                        TokenKind::Punctuation(Punctuation::LBrace | Punctuation::LParen | Punctuation::LBracket) => Some(self.parse_value(tokens)),
                         _ => None
                     }
                 }
@@ -336,6 +336,10 @@ impl Parser {
                         }
                     },
                     TokenKind::Punctuation(Punctuation::LParen) => {
+                        let v = self.parse_list_literal(tokens).1;
+
+                        println!("{:#?}", v);
+                        
                         val = Value::Expression(self.parse_binary(tokens, 0));
                         break;
                     },
@@ -361,7 +365,7 @@ impl Parser {
                                 return Value::Call(v, params);
                             }
                             else if next.kind() == &TokenKind::Punctuation(Punctuation::LBracket) {
-                                return Value::List(v, self.parse_list(tokens));
+                                return Value::List(List::Use(v, self.parse_list(tokens)));
                             }
                             else {
                                 tokens.push(temp);
@@ -396,6 +400,11 @@ impl Parser {
                                                 .at(t.line(), t.column())
                                                 .hint(format!("Try writing {} to close the expression before this token.", "}".bright_blue().bold()).as_str()));
 
+                        break;
+                    },
+                    TokenKind::Punctuation(Punctuation::LBracket) => {
+                        let (s, v) = self.parse_list_literal(tokens);
+                        val = Value::List(List::Decl(s, v));
                         break;
                     },
                     _ => {
@@ -640,6 +649,68 @@ impl Parser {
         }
     }
 
+    fn parse_list_literal(&mut self, tokens: &mut Vec<Token>) -> (Expr, Option<Vec<Vec<Value>>>)
+    {
+        let (mut size, mut val) = (Expr::Null, Vec::new());
+        let mut col: Vec<Value> = Vec::new();
+
+        tokens.pop(); // consume '['
+
+        if let Some(t) = tokens.last()
+        {
+            match t.kind() {
+                TokenKind::Identifier(_) | TokenKind::Value(_) => {
+                    size = self.parse_binary(tokens, 0);
+                },
+                _ => {
+                    // error! unexpected token
+                }
+            }
+        }
+
+        tokens.pop(); // consume ']'
+
+        loop {
+            if let Some(t) = tokens.last()
+            {
+                match t.kind() {
+                    TokenKind::Punctuation(Punctuation::LParen) | TokenKind::Punctuation(Punctuation::Comma) => {
+                        tokens.pop();
+                    },
+                    TokenKind::Punctuation(Punctuation::RParen) => {
+                        tokens.pop();
+                        if !col.is_empty() { val.push(col.clone()); col.clear(); }
+                        break;
+                    },
+                    TokenKind::Punctuation(Punctuation::SemiColon) => {
+                        tokens.pop();
+                        if !col.is_empty() { val.push(col.clone()); col.clear(); }
+                    },
+                    TokenKind::Identifier(_) | TokenKind::Value(_) => {
+                        col.push(self.parse_value(tokens));
+                    }
+                    _ => {
+                        // error! unexpected token!
+                        break;
+                    }
+                }
+            }
+        }
+
+        if val.is_empty() { return (size, None); } else {
+            let mut s: usize = match size {
+                Expr::Literal(sz) => sz.parse().unwrap_or(0),
+                _ => 0usize,
+            };
+
+            s = s * val.len();
+
+            size = Expr::Literal(s.to_string());
+        }
+
+        (size, Some(val))
+    }
+
     fn parse_function(&mut self, tokens: &mut Vec<Token>, public: bool) -> Global
     {
         let id = if let Some(t) = tokens.pop()
@@ -830,7 +901,7 @@ impl Parser {
                             stmts.push(Items::Expr(Value::Call(id, params)));
                         } else if tokens.last().map(|n| n.kind()) == Some(&TokenKind::Punctuation(Punctuation::LBracket)) {
                             tokens.push(t);
-                            stmts.push(Items::Expr(Value::List(id, self.parse_list(tokens))));
+                            stmts.push(Items::Expr(Value::List(List::Use(id, self.parse_list(tokens)))));
                         } else {
                             tokens.push(t);
                             stmts.push(Items::Var(Var::Var(self.parse_var(tokens))));
@@ -1077,8 +1148,6 @@ impl Parser {
                 break;
             }
         }
-
-        tokens.pop(); // consume ']'
 
         indices
     }

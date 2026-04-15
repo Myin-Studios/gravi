@@ -49,7 +49,7 @@ fn help()
     println!("    {}", "Back-end".white().bold());
     println!("    Those commands are used to choose the back-end to use to generate and compile the code (GCC by default).\n");
     println!("\t{}: It generates {} code and uses {} to compile it", "-zig".bright_blue().bold(), "C".white().bold(), "Zig".white().bold());
-    println!("\t{}: It generates and compile code with {}.", "-llvm".bright_blue().bold(), "LLVM".white().bold());
+    // println!("\t{}: It generates and compile code with {}.", "-llvm".bright_blue().bold(), "LLVM".white().bold());
 }
 
 fn clear(all: bool)
@@ -105,7 +105,7 @@ fn compile(c_src: &str, filename: &str, ty: &BackendType) -> std::io::Result<std
                                 .arg("cc").arg(c_src).arg("-o")
                                 .arg(format!("out/{}.exe", filename))
                                 .output(),
-        BackendType::LLVM => {
+        BackendType::LLVM => { // this doesn't work: not yet implemented!
             eprintln!("warning: LLVM backend is not yet implemented, falling back to GCC");
             std::process::Command::new("gcc")
                 .arg(c_src).arg("-o")
@@ -211,9 +211,10 @@ fn main()
 
         if arg_set.contains("-zig") {
             ty = BackendType::ZIG;
-        } else if arg_set.contains("-llvm") {
-            ty = BackendType::LLVM;
         }
+        // else if arg_set.contains("-llvm") {
+        //     ty = BackendType::LLVM;
+        // }
 
         if arg_set.contains("-rel")  { target = Target::Release; }
         if arg_set.contains("-kc")   { flag   = BuildFlag::KeepCode; }

@@ -204,8 +204,40 @@ impl Checker {
             Value::IfElse(ifelse) => {
                 ty = self.check_if(ifelse, symbol);
             },
-            Value::Loop(_) => {}
-            Value::List(id, _) => {
+            Value::Loop(_) => {},
+            Value::List(List::Decl(_, values)) => {
+                if expected == &Type::None
+                {
+                    if let Some(vals) = values
+                    {
+                        let mut val: Vec<&mut Value> = vals.iter_mut().flatten().collect();
+                        let exp = self.check_val(val[0], expected, symbol);
+
+                        for v in val
+                        {
+                            ty = self.check_val(v, &exp, symbol);
+                        }
+                    }
+                }
+                else {
+                    if let Some(vals) = values
+                    {
+                        for val in vals.iter_mut().flatten()
+                        {
+                            let t: Type = self.check_val(val, expected, symbol);
+
+                            if !self.is_compatible(&t, expected)
+                            {
+                                self.rep.add(NyonError::throw(crate::error::Kind::TypeMismatch(expected.clone(), t)));
+                                break;
+                            }
+                        }
+
+                        ty = expected.clone();
+                    }
+                }
+            },
+            Value::List(List::Use(id, vals)) => {
                 if let Some(elem) = symbol.find(id)
                 {
                     match elem {
@@ -218,7 +250,13 @@ impl Checker {
                 else {
                     // error! undeclared variable!
                 }
+
+                if ty == Type::StringLiteral && vals[0].len() == 1
+                {
+                    ty = Type::Numeric(crate::lexer::Numeric::I8); // char
+                }
             },
+            // _ => {}
         }
 
         ty
@@ -348,7 +386,7 @@ impl Checker {
 
     fn is_compatible(&self, found: &Type, expected: &Type) -> bool {
         if found == expected { return true; }
-        
+
         match (found, expected) {
             (Type::Numeric(f), Type::Numeric(e)) => {
                 use crate::lexer::Numeric::*;
@@ -358,6 +396,7 @@ impl Checker {
                     (F16 | F32 | F64,      F16 | F32 | F64)
                 )
             },
+            (Type::Numeric(crate::lexer::Numeric::I8), Type::StringLiteral) => true,
             _ => false,
         }
     }

@@ -11,6 +11,7 @@ pub enum Global
 {
     Import(Vec<Space>),
     Fun(FunKind),
+    Var(VarDecl),
     // Class,
     // Inter,
 }

@@ -51,7 +51,14 @@ impl Checker {
                     }
 
                     self.check_fun(fun, symbol);
-                }
+                },
+                Global::Var(var) => {
+                    symbol.push(symbol::ScopeKind::Global);
+                    if let Some(val) = &mut var.val.clone()
+                    {
+                        self.check_val(val, var.ty(), symbol);
+                    }
+                },
                 _ => {},
             }
         }

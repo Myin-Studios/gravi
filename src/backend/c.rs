@@ -160,6 +160,7 @@ impl CGenerator {
                     }
                 },
                 Global::Import(_) => {},
+                _ => {}
             }
         }
 
@@ -910,6 +911,17 @@ impl Backend for CGenerator {
 
         let mut is_main = false;
 
+        for item in prog.items() {
+            if let Global::Var(var) = item {
+                self.name_map.push((
+                    var.id.clone(),
+                    var.id.clone(),
+                    var.ty().clone(),
+                    false,
+                ));
+            }
+        }
+
         for item in prog.items()
         {
             match item {
@@ -923,6 +935,18 @@ impl Backend for CGenerator {
                     self.out.push_str(&format!("int main()\n{{\n{}\n\treturn 0;\n}}", bd));
                 },
                 Global::Import(_) => {},
+                Global::Var(var) => {
+                    let c_ty = self.get_type(var.ty());
+                    let mut_kw = if var.mutable() { "" } else { "const " };
+                    if let Some(val) = var.value() {
+                        let v = self.gen_val(val);
+                        self.out.push_str(&format!("{}{} {} = {};\n",
+                            mut_kw, c_ty, var.id, v));
+                    } else {
+                        self.out.push_str(&format!("{}{} {};\n",
+                            mut_kw, c_ty, var.id));
+                    }
+                },
             }
         }
 

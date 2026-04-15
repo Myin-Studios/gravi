@@ -1,8 +1,13 @@
 with {functions::{add, div/*, main <- uncomment this to see the magic result! (an error saying "Too many entry points"*/}, logical};
 
+var global_var: f32 = (3 + 5) / 2;
+
 fun main()
 {
-    show("Testing imported functions (calling div(3.0, 0.0)):")
+    show("Testing global var printing:")
+    show(global_var);
+    
+    show("\nTesting imported functions (calling div(3.0, 0.0)):")
     // show(div(3, 2)); // this throws two errors saying "Expected f32, but found u8!"
     show(div(3.0, 0.0)); // see "div" function: it checks if b is zero and changes it to 1 if true
 

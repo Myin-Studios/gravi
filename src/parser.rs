@@ -41,6 +41,8 @@ impl Parser {
         tokens.reverse();
 
         let mut public = false;
+        let mut mutable = false;
+        let mut par = Parallelism::None;
 
         loop
         {
@@ -73,9 +75,6 @@ impl Parser {
                                 TokenKind::Punctuation(Punctuation::SemiColon) => {
                                     tokens.pop();
                                 },
-                                TokenKind::Punctuation(Punctuation::Comma) => {
-                                    println!("Found comma");
-                                }
                                 TokenKind::Identifier(_) => {
                                     spaces.push(self.parse_space(tokens));
                                 }
@@ -87,7 +86,14 @@ impl Parser {
 
                         if !spaces.is_empty() { self.prog.add(Global::Import(spaces)) }
                     },
+                    TokenKind::Keyword(Keyword::GPU) => par = Parallelism::GPU,
+                    TokenKind::Keyword(Keyword::PAR) => par = Parallelism::CPU,
+                    TokenKind::Keyword(Keyword::Mut) => mutable = true,
                     TokenKind::Keyword(Keyword::Pub) => public = true,
+                    TokenKind::Keyword(Keyword::Var) => {
+                        let var = self.parse_var_decl(&par, mutable, tokens);
+                        self.prog.add(Global::Var(var));
+                    },
                     TokenKind::Keyword(Keyword::Fun) => {
                         let fun = self.parse_function(tokens, public);
                         self.prog.add(fun);
@@ -336,10 +342,6 @@ impl Parser {
                         }
                     },
                     TokenKind::Punctuation(Punctuation::LParen) => {
-                        let v = self.parse_list_literal(tokens).1;
-
-                        println!("{:#?}", v);
-                        
                         val = Value::Expression(self.parse_binary(tokens, 0));
                         break;
                     },
@@ -394,7 +396,7 @@ impl Parser {
                         val = Value::IfElse(self.parse_if(tokens, false));
                         break;
                     },
-                    TokenKind::Punctuation(Punctuation::RBrace) | TokenKind::Punctuation(Punctuation::SemiColon) => {
+                    TokenKind::Punctuation(Punctuation::RBrace) => {
                         self.rep.add(NyonError::throw(crate::error::Kind::UnclosedParenthesis)
                                                 .file(t.file())
                                                 .at(t.line(), t.column())
@@ -407,6 +409,7 @@ impl Parser {
                         val = Value::List(List::Decl(s, v));
                         break;
                     },
+                    TokenKind::Punctuation(Punctuation::SemiColon) => break,
                     _ => {
                         self.rep.add(NyonError::throw(crate::error::Kind::ExpectedValue)
                                                 .file(t.file())

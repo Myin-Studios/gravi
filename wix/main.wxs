@@ -69,7 +69,7 @@
 
         <Package Id='*'
             Keywords='Installer'
-            Description='The Nyon programming language compiler'
+            Description='The Aion programming language compiler'
             Manufacturer='Myin-Studios'
             InstallerVersion='450'
             Languages='1033'

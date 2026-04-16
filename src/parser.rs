@@ -367,7 +367,8 @@ impl Parser {
                                 return Value::Call(v, params);
                             }
                             else if next.kind() == &TokenKind::Punctuation(Punctuation::LBracket) {
-                                return Value::List(List::Use(v, self.parse_list(tokens)));
+                                let (indices, values) = self.parse_list(tokens);
+                                return Value::List(List::Use(v, indices, values));
                             }
                             else {
                                 tokens.push(temp);
@@ -903,8 +904,8 @@ impl Parser {
                             let params = self.parse_args(tokens);
                             stmts.push(Items::Expr(Value::Call(id, params)));
                         } else if tokens.last().map(|n| n.kind()) == Some(&TokenKind::Punctuation(Punctuation::LBracket)) {
-                            tokens.push(t);
-                            stmts.push(Items::Expr(Value::List(List::Use(id, self.parse_list(tokens)))));
+                            let (indices, values) = self.parse_list(tokens);
+                            stmts.push(Items::Expr(Value::List(List::Use(id, indices, values))));
                         } else {
                             tokens.push(t);
                             stmts.push(Items::Var(Var::Var(self.parse_var(tokens))));
@@ -1111,13 +1112,13 @@ impl Parser {
         }
     }
 
-    fn parse_list(&mut self, tokens: &mut Vec<Token>) -> Vec<Vec<Value>>
+    fn parse_list(&mut self, tokens: &mut Vec<Token>) -> (Vec<Vec<Value>>, Option<Box<Value>>)
     {
         let mut indices = Vec::new();
         let mut v = Vec::new();
+        let mut val = None;
         
         tokens.pop(); // consume '['
-
         
         loop {
             if let Some(t) = tokens.pop()
@@ -1152,7 +1153,15 @@ impl Parser {
             }
         }
 
-        indices
+        if let Some(t) = tokens.pop()
+        {
+            if matches!(t.kind(), TokenKind::Punctuation(Punctuation::Assignment))
+            {
+                val = Some(Box::new(self.parse_value(tokens)));
+            }
+        }
+
+        (indices, val)
     }
 
     pub fn reporter(&self) -> &Reporter          { &self.rep }

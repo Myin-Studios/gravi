@@ -308,30 +308,60 @@ impl CGenerator {
             .unwrap_or(false)
     }
 
-    fn size_of_range(&mut self, val: &Value, mut n: usize) -> usize
-    {
-        match val {
-            Value::Expression(Expr::Range(rng)) => {
-                let start = self.gen_expr(rng.start());
-                let end = self.gen_expr(rng.end());
+    fn expand_indices(&mut self, vals: &[&Value]) -> Vec<String> {
+        let mut result = Vec::new();
+        for v in vals {
+            match v {
+                Value::Expression(Expr::Range(rng)) => {
+                    let s: usize = self.gen_expr(rng.start()).parse().unwrap_or(0);
+                    let e: usize = self.gen_expr(rng.end()).parse().unwrap_or(0);
+                    let iter: Box<dyn Iterator<Item = usize>> = match (s <= e, rng.inclusive()) {
+                        (true,  true)  => Box::new(s..=e),
+                        (true,  false) => Box::new(s..e),
+                        (false, true)  => Box::new((e..=s).rev()),
+                        (false, false) => Box::new((e..s).rev()),
+                    };
+                    for i in iter { result.push(i.to_string()); }
+                },
+                _ => result.push(self.gen_val(v)),
+            }
+        }
+        result
+    }
 
-                let s: usize = start.parse().unwrap_or(0);
-                let e: usize = end.parse().unwrap_or(0);
+    fn gen_list_use_assign(&mut self, id: &str, indices: &[&Value], rhs: &Value) -> String {
+        let dest   = self.get_set_mangled(id);
+        let lhs    = self.expand_indices(indices);
+        let mut res = String::new();
 
-                n += if s < e { e - s } else { s - e };
-            },
-            Value::List(List::Use(_, vals)) => {
-                let v: Vec<&Value> = vals.iter().flatten().collect();
+        match rhs {
+            Value::List(List::Use(src_id, src_indices, None)) => {
+                // list[lhs...] = other[rhs...]
+                let src     = self.get_set_mangled(src_id);
+                let src_flat: Vec<&Value> = src_indices.iter().flatten().collect();
+                let rhs     = self.expand_indices(&src_flat);
 
-                for val in v
-                {
-                    n = self.size_of_range(val, n);
+                for (l, r) in lhs.iter().zip(rhs.iter()) {
+                    res.push_str(&format!("\t{}[{}] = {}[{}];\n", dest, l, src, r));
                 }
             },
-            _ => { return n; }
+            Value::Expression(Expr::Range(_)) => {
+                // list[start:end] (or list[start::end]) = start:end (or start::end)
+                let rhs = self.expand_indices(&[rhs]);
+                for (l, r) in lhs.iter().zip(rhs.iter()) {
+                    res.push_str(&format!("\t{}[{}] = {};\n", dest, l, r));
+                }
+            },
+            _ => {
+                // list[lhs...] = scalar/expr
+                let val = self.gen_val(rhs);
+                for i in &lhs {
+                    res.push_str(&format!("\t{}[{}] = {};\n", dest, i, val));
+                }
+            }
         }
 
-        n
+        res
     }
 
     fn gen_var(&mut self, var: &VarDecl) -> String
@@ -417,159 +447,51 @@ impl CGenerator {
                         mutable, ty, var.identifier(), self.gen_if_ternary(ifelse)));
                 },
                 Value::Loop(_) => {},
-                Value::List(List::Decl(_, values)) => {
-                    if let Some(vals) = values {
-                        let flat: Vec<&Value> = vals.iter().flatten().collect();
-                        let mut n = flat.len();
-                        let mut list_val = String::new();
+                Value::List(List::Decl(_, Some(vals))) => {
+                    let flat: Vec<&Value> = vals.iter().flatten().collect();
+                    let mut all: Vec<String> = Vec::new();
 
-                        if var.ty() == &Type::StringLiteral {
-                            for v in flat {
-                                n = self.size_of_range(v, n);
-
-                                list_val.push_str(&self.gen_val(v));
-                                list_val.push_str(", ");
-                            }
-
-                            res.push_str(&format!("\tint sz_{} = {};\n", var.identifier(), n));
-
-                            res.push_str(&format!("\tchar {}[{}] = {{", var.identifier(), n + 1));
-
-                            res.push_str(&list_val);
-
-                            res.push_str("'\\0'};\n");
-                        } else {
-                            for (i, v) in flat.iter().enumerate() {
-                                n = self.size_of_range(v, n);
-
-                                list_val.push_str(&self.gen_val(v));
-                                if i < flat.len() - 1 { list_val.push_str(", "); }
-                            }
-                            
-                            res.push_str(&format!("\tint sz_{} = {};\n", var.identifier(), n));
-                            res.push_str(&format!("\t{} {}[{}] = {{", ty, var.identifier(), n));
-
-                            res.push_str(&list_val);
-
-                            res.push_str("};\n");
+                    for v in &flat {
+                        match v {
+                            Value::List(List::Use(src_id, src_indices, None)) => {
+                                let src      = self.get_set_mangled(src_id);
+                                let src_flat: Vec<&Value> = src_indices.iter().flatten().collect();
+                                for idx in self.expand_indices(&src_flat) {
+                                    all.push(format!("{}[{}]", src, idx));
+                                }
+                            },
+                            _ => all.push(self.gen_val(v)),
                         }
                     }
-                }
-                Value::List(List::Use(id, vals)) => {
-                    let flat: Vec<&Value> = vals.iter().flatten().collect();
-                    let mut n = flat.len();
-                    let mut list_val = String::new();
-                    
+
+                    let n        = all.len();
+                    let list_val = all.join(", ");
+
+                    res.push_str(&format!("\tint sz_{} = {};\n", var.identifier(), n));
                     if var.ty() == &Type::StringLiteral {
-                        for v in flat {
-                            match v {
-                                Value::Expression(Expr::Range(rng)) => {
-                                    let start = self.gen_expr(rng.start());
-                                    let end = self.gen_expr(rng.end());
-
-                                    let s: usize = start.parse().unwrap_or(0);
-                                    let e: usize = end.parse().unwrap_or(0);
-
-                                    n += if s < e { e - s } else { s - e };
-
-                                    let incl = rng.inclusive();
-
-                                    if incl {
-                                        let iter: Box<dyn Iterator<Item = usize>> = if s <= e {
-                                            Box::new(s..=e)
-                                        } else {
-                                            Box::new((e..=s).rev())
-                                        };
-                                        let items: Vec<usize> = iter.collect();
-                                        let len = items.len();
-                                        for (idx, i) in items.iter().enumerate() {
-                                            list_val.push_str(&format!("{}[{}]", self.get_set_mangled(id), i));
-                                            if idx < len - 1 { list_val.push_str(", "); }
-                                        }
-                                    } else {
-                                        let iter: Box<dyn Iterator<Item = usize>> = if s < e {
-                                            Box::new(s..e)
-                                        } else {
-                                            Box::new((e..s).rev())
-                                        };
-                                        let items: Vec<usize> = iter.collect();
-                                        let len = items.len();
-                                        for (idx, i) in items.iter().enumerate() {
-                                            list_val.push_str(&format!("{}[{}]", self.get_set_mangled(id), i));
-                                            if idx < len - 1 { list_val.push_str(", "); }
-                                        }
-                                    }
-                                },
-                                _ => {
-                                    list_val.push_str(&format!("{}[{}]", self.get_set_mangled(id), self.gen_val(v)));
-                                }
-                            }
-
-                            list_val.push_str(", ");
-                        }
-
-                        res.push_str(&format!("\tint sz_{} = {};\n", var.identifier(), n));
-                        res.push_str(&format!("\tchar {}[{}] = {{", var.identifier(), n + 1));
-
-                        res.push_str(&list_val);
-
-                        res.push_str("'\\0'};\n");
+                        res.push_str(&format!("\tchar {}[{}] = {{{}, '\\0'}};\n", var.identifier(), n + 1, list_val));
                     } else {
-                        for (i, v) in flat.iter().enumerate() {
-                            match v {
-                                Value::Expression(Expr::Range(rng)) => {
-                                    let start = self.gen_expr(rng.start());
-                                    let end = self.gen_expr(rng.end());
-
-                                    let s: usize = start.parse().unwrap_or(0);
-                                    let e: usize = end.parse().unwrap_or(0);
-
-                                    n += if s < e { e - s } else { s - e };
-
-                                    let incl = rng.inclusive();
-
-                                    if incl {
-                                        let iter: Box<dyn Iterator<Item = usize>> = if s <= e {
-                                            Box::new(s..=e)
-                                        } else {
-                                            Box::new((e..=s).rev())
-                                        };
-                                        let items: Vec<usize> = iter.collect();
-                                        let len = items.len();
-                                        for (idx, i) in items.iter().enumerate() {
-                                            list_val.push_str(&format!("{}[{}]", self.get_set_mangled(id), i));
-                                            if idx < len - 1 { list_val.push_str(", "); }
-                                        }
-                                    } else {
-                                        let iter: Box<dyn Iterator<Item = usize>> = if s < e {
-                                            Box::new(s..e)
-                                        } else {
-                                            Box::new((e..s).rev())
-                                        };
-                                        let items: Vec<usize> = iter.collect();
-                                        let len = items.len();
-                                        for (idx, i) in items.iter().enumerate() {
-                                            list_val.push_str(&format!("{}[{}]", self.get_set_mangled(id), i));
-                                            if idx < len - 1 { list_val.push_str(", "); }
-                                        }
-                                    }
-                                },
-                                _ => {
-                                    list_val.push_str(&format!("{}[{}]", self.get_set_mangled(id), self.gen_val(v)));
-                                }
-                            }
-
-                            if i < flat.len() - 1 { list_val.push_str(", "); }
-                        }
-                        
-                        res.push_str(&format!("\tint sz_{} = {};\n", var.identifier(), n));
-                        res.push_str(&format!("\t{} {}[{}] = {{", ty, var.identifier(), n));
-
-                        res.push_str(&list_val);
-
-                        res.push_str("};\n");
+                        res.push_str(&format!("\t{} {}[{}] = {{{}}};\n", ty, var.identifier(), n, list_val));
                     }
                 },
+                Value::List(List::Use(id, vals, _)) => {
+                    let flat:    Vec<&Value> = vals.iter().flatten().collect();
+                    let src      = self.get_set_mangled(id);
+                    let expanded = self.expand_indices(&flat);
+                    let n        = expanded.len();
+                    let list_val = expanded.iter()
+                        .map(|idx| format!("{}[{}]", src, idx))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    res.push_str(&format!("\tint sz_{} = {};\n", var.identifier(), n));
+                    if var.ty() == &Type::StringLiteral {
+                        res.push_str(&format!("\tchar {}[{}] = {{{}, '\\0'}};\n", var.identifier(), n + 1, list_val));
+                    } else {
+                        res.push_str(&format!("\t{} {}[{}] = {{{}}};\n", ty, var.identifier(), n, list_val));
+                    }
+                },
+                _ => {}
             }
         }
         else {
@@ -713,7 +635,7 @@ impl CGenerator {
                 },
                 Items::Expr(expr) => {
                     match expr {
-                        Value::Block(_, _) => {}, // block without return — nothing to emit
+                        Value::Block(_, _) => {},
                         Value::Expression(Expr::Identifier(name)) => {
                             id = self.get_set_mangled(name);
                         },
@@ -791,7 +713,12 @@ impl CGenerator {
                                 res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
                             }
                         },
+                        Value::List(List::Use(id, indices, Some(rhs))) => {
+                            let flat: Vec<&Value> = indices.iter().flatten().collect();
+                            res.push_str(&self.gen_list_use_assign(id, &flat, rhs));
+                        },
                         Value::List(_) => {},
+                        // _ => {}
                     }
                 },
                 Items::Stop => {
@@ -821,111 +748,16 @@ impl CGenerator {
             Value::IfElse(ifelse)       => res.push_str(&self.gen_if_ternary(ifelse)),
             Value::Null                 => {},
             Value::Loop(_) => {},
-            Value::List(List::Use(id, vals)) => {
-                let flat: Vec<&Value> = vals.iter().flatten().collect();
-                let mut n = flat.len();
-                let mut list_val = String::new();
-                let ty = self.type_of_var(id);
-                
-                if ty == Type::StringLiteral {
-                    for v in flat {
-                        match v {
-                            Value::Expression(Expr::Range(rng)) => {
-                                let start = self.gen_expr(rng.start());
-                                let end = self.gen_expr(rng.end());
-
-                                let s: usize = start.parse().unwrap_or(0);
-                                let e: usize = end.parse().unwrap_or(0);
-
-                                let incl = rng.inclusive();
-
-                                if incl {
-                                    let iter: Box<dyn Iterator<Item = usize>> = if s <= e {
-                                        Box::new(s..=e)
-                                    } else {
-                                        Box::new((e..=s).rev())
-                                    };
-                                    let items: Vec<usize> = iter.collect();
-                                    let len = items.len();
-                                    for (idx, i) in items.iter().enumerate() {
-                                        list_val.push_str(&format!("{}[{}]", self.get_set_mangled(id), i));
-                                        if idx < len - 1 { list_val.push_str(", "); }
-                                    }
-                                } else {
-                                    let iter: Box<dyn Iterator<Item = usize>> = if s < e {
-                                        Box::new(s..e)
-                                    } else {
-                                        Box::new((e..s).rev())
-                                    };
-                                    let items: Vec<usize> = iter.collect();
-                                    let len = items.len();
-                                    for (idx, i) in items.iter().enumerate() {
-                                        list_val.push_str(&format!("{}[{}]", self.get_set_mangled(id), i));
-                                        if idx < len - 1 { list_val.push_str(", "); }
-                                    }
-                                }
-                            },
-                            _ => {
-                                list_val.push_str(&format!("{}[{}]", self.get_set_mangled(id), self.gen_val(v)));
-                            }
-                        }
-                    }
-                    
-                    res.push_str(&list_val);
-                } else {
-                    for (i, v) in flat.iter().enumerate() {
-                        match v {
-                            Value::Expression(Expr::Range(rng)) => {
-                                let start = self.gen_expr(rng.start());
-                                let end = self.gen_expr(rng.end());
-
-                                let s: usize = start.parse().unwrap_or(0);
-                                let e: usize = end.parse().unwrap_or(0);
-
-                                n += if s < e { e - s } else { s - e };
-
-                                let incl = rng.inclusive();
-
-                                if incl {
-                                    let iter: Box<dyn Iterator<Item = usize>> = if s <= e {
-                                        Box::new(s..=e)
-                                    } else {
-                                        Box::new((e..=s).rev())
-                                    };
-                                    let items: Vec<usize> = iter.collect();
-                                    let len = items.len();
-                                    for (idx, i) in items.iter().enumerate() {
-                                        list_val.push_str(&format!("{}[{}]", self.get_set_mangled(id), i));
-                                        if idx < len - 1 { list_val.push_str(", "); }
-                                    }
-                                } else {
-                                    let iter: Box<dyn Iterator<Item = usize>> = if s < e {
-                                        Box::new(s..e)
-                                    } else {
-                                        Box::new((e..s).rev())  // esclusivo: (e+1..=s).rev() se vuoi escludere s
-                                    };
-                                    let items: Vec<usize> = iter.collect();
-                                    let len = items.len();
-                                    for (idx, i) in items.iter().enumerate() {
-                                        list_val.push_str(&format!("{}[{}]", self.get_set_mangled(id), i));
-                                        if idx < len - 1 { list_val.push_str(", "); }
-                                    }
-                                }
-                            },
-                            _ => {
-                                list_val.push_str(&format!("{}[{}]", self.get_set_mangled(id), self.gen_val(v)));
-                            }
-                        }
-
-                        if i < flat.len() - 1 { list_val.push_str(", "); }
-                    }
-                    
-                    res.push_str(&format!("[{}] = {{", n));
-
-                    res.push_str(&list_val);
-
-                    res.push_str("};\n");
-                }
+            Value::List(List::Use(id, vals, None)) => {
+                let flat:    Vec<&Value> = vals.iter().flatten().collect();
+                let mangled  = self.get_set_mangled(id);
+                let expanded = self.expand_indices(&flat);
+                res.push_str(
+                    &expanded.iter()
+                        .map(|idx| format!("{}[{}]", mangled, idx))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
             },
             _ => {}
         }
@@ -1058,7 +890,7 @@ impl CGenerator {
                         res.push_str(&format!("\tprintf(\"{}\\n\", {});\n", Self::printf_fmt(&ty), mangled));
                     }
                 },
-                Value::List(List::Use(id, values)) => {
+                Value::List(List::Use(id, values, _)) => {
                     let mangled = self.get_set_mangled(id);
                     let fmt     = Self::printf_fmt(&self.type_of_var(id));
                     let flat: Vec<&Value> = values.iter().flatten().collect();

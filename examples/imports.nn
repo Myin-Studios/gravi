@@ -11,13 +11,20 @@ fun main()
     // show(div(3, 2)); // this throws two errors saying "Expected f32, but found u8!"
     show(div(3.0, 0.0)); // see "div" function: it checks if b is zero and changes it to 1 if true
 
-    mut var l1 = [5](3, 1, 4, 2, 5; 1, 2, 3, 4, 5);
     mut var l2;
 
     // code ...
 
     l2 = [5](5, 4, 3, 2, 1);
-    
+
+    show("\nChanging value to numeric list and printing:\n\t> l1 (original):");
+    mut var l1 = [5](3, 1, 4, 2, 5; 1, 2, 3, 4, 5);
+    show(l1);
+
+    show("\nChanging value to numeric list and printing:\n\t> l1 (modified):");
+    l1[0:5] = 2::0;
+    show(l1);
+
     var lval = l1[0::4]; // list construction based on range-based indexing for numeric lists
 
     show("\nNumeric list printing:")

@@ -244,7 +244,7 @@ impl Checker {
                     }
                 }
             },
-            Value::List(List::Use(id, vals)) => {
+            Value::List(List::Use(id, vals, assigned)) => {
                 if let Some(elem) = symbol.find(id)
                 {
                     match elem {
@@ -261,6 +261,15 @@ impl Checker {
                 if ty == Type::StringLiteral && vals[0].len() == 1 && !matches!(vals[0][0], Value::Expression(Expr::Range(_)))
                 {
                     ty = Type::Numeric(crate::lexer::Numeric::I8); // char
+                }
+
+                if let Some(val) = assigned
+                {
+                    let found = self.check_val(val, expected, symbol);
+                    if !self.is_compatible(&found, &ty)
+                    {
+                        self.rep.add(NyonError::throw(crate::error::Kind::TypeMismatch(found, ty.clone())));
+                    }
                 }
             },
             // _ => {}

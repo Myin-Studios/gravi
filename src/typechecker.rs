@@ -258,7 +258,7 @@ impl Checker {
                     // error! undeclared variable!
                 }
 
-                if ty == Type::StringLiteral && vals[0].len() == 1
+                if ty == Type::StringLiteral && vals[0].len() == 1 && !matches!(vals[0][0], Value::Expression(Expr::Range(_)))
                 {
                     ty = Type::Numeric(crate::lexer::Numeric::I8); // char
                 }

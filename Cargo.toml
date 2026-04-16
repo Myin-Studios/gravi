@@ -1,7 +1,15 @@
 [package]
-name = "nyon"
+name = "gravi"
 version = "0.1.0"
 edition = "2024"
+description = "The Nyon programming language compiler"
+repository = "https://github.com/Myin-Studios/gravi"
+license = "MIT"
 
 [dependencies]
 colored = "3.1.1"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

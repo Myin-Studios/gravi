@@ -53,6 +53,18 @@ fun main()
     show(sval);
     show(sval2);
     show(sval3);
+    
+    show("\nBoolean-conditioned loop:")
+    mut var i: i8 = 1;
+    loop i < 18
+    {
+        if i % 2 != 0
+        {
+            show(sval[i]);
+        }
+        
+        i = i + 1;
+    }
 
     // show("\nString printing char by char:")
     // loop i in 0::1 { show(sval[i]); } <- bug! this doesn't work

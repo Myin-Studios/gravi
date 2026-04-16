@@ -660,9 +660,9 @@ impl CGenerator {
                         Value::Loop(l) => {
                             if let Some(cond) = l.cond.clone()
                             {
-                                let mut start = String::new();
-                                let mut end   = String::new();
-                                let mut is_inclusive = false;
+                                let start: String;
+                                let end: String;
+                                let is_inclusive: bool;
 
                                 if let Some(val) = cond.value()
                                 {
@@ -673,39 +673,42 @@ impl CGenerator {
                                                     start = self.gen_expr(r.start());
                                                     end = self.gen_expr(r.end());
                                                     is_inclusive = r.inclusive();
+
+                                                    let mut s: i32 = start.parse().unwrap_or(0);
+                                                    let mut e: i32 = end.parse().unwrap_or(0);
+                                                    
+                                                    if !is_inclusive
+                                                    {
+                                                        if s < e { e = e - 1; }
+                                                        else if e < s { s = s - 1; }
+                                                    }
+
+                                                    let id = self.register_var(cond.identifier(), cond.ty().to_owned(), false);
+
+                                                    if s < e
+                                                    {
+                                                        res.push_str(&format!("\tfor (int {} = {}; {} <= {}; {}++)\n", id, s,
+                                                                                                                        id, e,
+                                                                                                                        id
+                                                                                                                        ));
+                                                        res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
+                                                    }
+                                                    else {
+                                                        res.push_str(&format!("\tfor (int {} = {}; {} >= {}; {}--)\n", id, s,
+                                                                                                                        id, e,
+                                                                                                                        id
+                                                                                                                        ));
+                                                        res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
+                                                    }
+                                                },
+                                                Expr::Boolean(_) => {
+                                                    res.push_str(&format!("\twhile ({})\n\t{{\n\t{}\n\t}}", self.gen_expr(expr), self.gen_block(&l.body).0));
                                                 },
                                                 _ => {}
                                             }
                                         }
                                         _ => {} // error?
                                     }
-                                }
-
-                                let mut s: i32 = start.parse().unwrap_or(0);
-                                let mut e: i32 = end.parse().unwrap_or(0);
-                                
-                                if !is_inclusive
-                                {
-                                    if s < e { e = e - 1; }
-                                    else if e < s { s = s - 1; }
-                                }
-
-                                let id = self.register_var(cond.identifier(), cond.ty().to_owned(), false);
-
-                                if s < e
-                                {
-                                    res.push_str(&format!("\tfor (int {} = {}; {} <= {}; {}++)\n", id, s,
-                                                                                                      id, e,
-                                                                                                      id
-                                                                                                    ));
-                                    res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
-                                }
-                                else {
-                                    res.push_str(&format!("\tfor (int {} = {}; {} >= {}; {}--)\n", id, s,
-                                                                                                      id, e,
-                                                                                                      id
-                                                                                                    ));
-                                    res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
                                 }
                             }
                             else {
@@ -891,13 +894,14 @@ impl CGenerator {
                     }
                 },
                 Value::List(List::Use(id, values, _)) => {
-                    let mangled = self.get_set_mangled(id);
-                    let fmt     = Self::printf_fmt(&self.type_of_var(id));
+                    let mangled  = self.get_set_mangled(id);
+                    let var_ty   = self.type_of_var(id);
+                    let elem_fmt = if var_ty == Type::StringLiteral { "%c" } else { Self::printf_fmt(&var_ty) };
                     let flat: Vec<&Value> = values.iter().flatten().collect();
 
                     for v in &flat {
                         res.push_str(&format!("\tprintf(\"{}\\n\", {}[{}]);\n",
-                            fmt, mangled, self.gen_val(v)));
+                            elem_fmt, mangled, self.gen_val(v)));
                     }
                 },
                 Value::Expression(Expr::Literal(lit)) => {

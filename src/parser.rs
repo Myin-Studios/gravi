@@ -1051,36 +1051,36 @@ impl Parser {
 
         let mut index = String::new();
         let mut val = Value::Null;
-        let mut is_assignment = false;
 
         loop {
-            if let Some(t) = tokens.last().cloned()
+            if let Some(t) = tokens.pop()
             {
                 match t.kind() {
                     TokenKind::Identifier(id) => {
-                        index = id.to_string();
-                        tokens.pop();
+                        if let Some(next) = tokens.last()
+                        {
+                            if matches!(next.kind(), TokenKind::Keyword(Keyword::In))
+                            {
+                                index = id.to_owned();
+                                tokens.pop();
+                                val = self.parse_value(tokens);
+                            } else {
+                                tokens.push(t);
+                                val = self.parse_value(tokens);
+                            }
+                        }
                     },
-                    TokenKind::Keyword(Keyword::In) => {
-                        is_assignment = true;
-                        tokens.pop();
+                    TokenKind::Punctuation(Punctuation::LParen) => {
+                        tokens.push(t);
+                        val = self.parse_value(tokens);
                     },
                     TokenKind::Value(_) => {
-                        if is_assignment
-                        {
-                            val = self.parse_value(tokens)
-                        }
-                        else {
-                            // error! value without "in" assignment keyword?!
-                            break;
-                        }
+                        val = self.parse_value(tokens);
                     },
                     TokenKind::Punctuation(Punctuation::LBrace) => {
-                        tokens.pop();
                         body = self.parse_block(tokens, false);
                     },
                     TokenKind::Punctuation(Punctuation::RBrace) => {
-                        tokens.pop();
                         break;
                     },
                     _ => { break; }
@@ -1165,6 +1165,6 @@ impl Parser {
     }
 
     pub fn reporter(&self) -> &Reporter          { &self.rep }
-    pub fn output(&self)   -> &Program           { &self.prog }
+    pub fn output(&self)   -> &Program           { /*println!("{:#?}", self.prog);*/ &self.prog }
     pub fn output_mut(&mut self) -> &mut Program { &mut self.prog }
 }

@@ -355,6 +355,11 @@ impl Parser {
                         val = Value::Boolean(if *b { BoolValue::True } else { BoolValue::False });
                         break;
                     },
+                    TokenKind::Char(c) => {
+                        tokens.pop();
+                        val = Value::Char(*c);
+                        break;
+                    }
                     TokenKind::Identifier(v) | TokenKind::Value(v) => {
                         let v = v.clone();
                         let temp = tokens.pop().unwrap();

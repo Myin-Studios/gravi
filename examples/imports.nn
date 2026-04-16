@@ -66,6 +66,11 @@ fun main()
         i = i + 1;
     }
 
-    // show("\nString printing char by char:")
-    // loop i in 0::1 { show(sval[i]); } <- bug! this doesn't work
+    show("\nString printing char by char:")
+    loop i in 0::4 { show(sval[i]); }
+    
+    show("\nChanging and printing modified string:")
+    sval[17] = '?'
+    
+    show(sval); // "world and bananas?"
 }

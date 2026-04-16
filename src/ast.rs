@@ -147,6 +147,7 @@ pub enum Value
 {
     Expression(Expr),
     StringLiteral(String),
+    Char(char),
     Boolean(BoolValue),
     Call(String, Vec<Value>),
     List(List), // vector: a[index] --- matrix (future implementation): a[row; column] --- array as result: a[i1, i1, ... in]

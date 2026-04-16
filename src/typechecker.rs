@@ -272,6 +272,7 @@ impl Checker {
                     }
                 }
             },
+            Value::Char(_) => ty = Type::Character,
             // _ => {}
         }
 
@@ -413,6 +414,8 @@ impl Checker {
                 )
             },
             (Type::Numeric(crate::lexer::Numeric::I8), Type::StringLiteral) => true,
+            (Type::Character, Type::Numeric(crate::lexer::Numeric::I8)) => true,
+            (Type::Numeric(crate::lexer::Numeric::I8), Type::Character) => true,
             _ => false,
         }
     }

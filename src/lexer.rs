@@ -131,6 +131,7 @@ pub enum TokenKind
     Identifier(String),
     Punctuation(Punctuation),
     Value(String),
+    Char(char),
     Boolean(bool),
     Operator(Operator),
 }
@@ -523,7 +524,7 @@ impl Lexer {
                     word.push(c);
                 }
             },
-            '+' | '-' | '*' | '/' | '%' | '^' | ';' | ',' | '(' | ')' | '[' | ']' | '{' | '}' | '\'' => {
+            '+' | '-' | '*' | '/' | '%' | '^' | ';' | ',' | '(' | ')' | '[' | ']' | '{' | '}' => {
                 word.push(self.advance());
             },
             '"' => {
@@ -557,6 +558,20 @@ impl Lexer {
                     self.tokens.push(Token::new(
                         TokenKind::Punctuation(Punctuation::Quote), &self.file, self.line, self.column - 1
                     ));
+                }
+            },
+            '\'' => {
+                self.advance();
+
+                if self.next() != '\''
+                {
+                    let c = self.advance();
+                    self.tokens.push(Token::new(TokenKind::Char(c), &self.file, self.line, self.column - 1));
+                }
+
+                if self.advance() != '\''
+                {
+                    // error! unclosed character
                 }
             },
             '|' => {

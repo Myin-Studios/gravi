@@ -1,11 +1,11 @@
 [package]
 name = "gravi"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
-description = "The Nyon programming language compiler"
+description = "The Aion programming language compiler"
 authors = ["Myin-Studios"]
 repository = "https://github.com/Myin-Studios/gravi"
-license = "MIT"
+license = "MPL 2.0"
 
 [package.metadata.wix]
 upgrade-guid = "459F19DC-8188-47B1-B857-C0110406457E"

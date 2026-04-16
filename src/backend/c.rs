@@ -635,7 +635,7 @@ impl CGenerator {
                 },
                 Items::Expr(expr) => {
                     match expr {
-                        Value::Char(c) => {},
+                        Value::Char(_) => {},
                         Value::Block(_, _) => {},
                         Value::Expression(Expr::Identifier(name)) => {
                             id = self.get_set_mangled(name);
@@ -860,7 +860,7 @@ impl CGenerator {
                 Value::IfElse(_)   => {},
                 Value::Loop(_)     => {},
                 Value::List(_)     => {},
-                Value::Char(c) => {},
+                Value::Char(c) => { res.push_str(&format!("'{}'", c)); },
             }
 
             if i < vals.len() - 1 {

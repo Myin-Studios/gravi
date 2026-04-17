@@ -67,8 +67,8 @@ impl CGenerator {
                                 if let Some(body) = fun.body.clone() {
                                     let params_start = self.name_map.len();
 
-                                    for (_, (name, ty, _, _)) in fun.params.iter().enumerate() {
-                                        self.register_var(name, ty.clone(), false);
+                                    for (_, (name, ty, _, _, list)) in fun.params.iter().enumerate() {
+                                        self.register_var(name, ty.clone(), list.clone());
                                     }
 
                                     let mut helpers = String::new();
@@ -100,10 +100,13 @@ impl CGenerator {
                                     res.push_str(&helpers);
 
                                     res.push_str(&format!("{} nn_{}(", self.get_type(&fun.ret), id));
-                                    for (i, (name, ty, mutable, _)) in fun.params.iter().enumerate() {
+                                    for (i, (name, ty, mutable, _, list)) in fun.params.iter().enumerate() {
                                         let n = self.get_set_mangled(name);
+                                        let mut t = self.get_type(&ty);
+                                        if list.clone() { t.push('*'); }
+
                                         if !mutable { res.push_str("const "); }
-                                        res.push_str(&format!("{} {}", self.get_type(&ty), n));
+                                        res.push_str(&format!("{} {}", t, n));
                                         if i < fun.params.len() - 1 { res.push_str(", "); }
                                     }
                                     res.push_str(")\n");
@@ -119,6 +122,7 @@ impl CGenerator {
                             symbol::Symbol::Variable(_) => {
                                 // error!
                             },
+                            // _ => {}
                         }
                     }
                 }
@@ -369,7 +373,8 @@ impl CGenerator {
         let mut res: String = String::new();
 
         let par = var.parallelism();
-        let ty  = self.get_type(var.ty());
+        let mut ty  = self.get_type(var.ty());
+        if var.list { ty.push('*'); }
 
         let mutable = if var.mutable() { "" } else { "const " };
 
@@ -437,7 +442,7 @@ impl CGenerator {
                     res.push_str(&format!("\t{}bool {} = {};\n", mutable, var.identifier(), bv));
                 },
                 Value::Null => {},
-                Value::Call(_, _) => {},
+                Value::Call(id, val) => { res.push_str(&format!("\t{}{} {} = nn_{}({});\n", mutable, ty, var.identifier(), id, self.gen_call(val))); },
                 Value::Block(_, _) => {
                     let blk = self.inline.pop_front().unwrap_or_default();
                     res.push_str(&format!("\t{}{} {} = {}();\n", mutable, ty, var.identifier(), blk));
@@ -803,47 +808,6 @@ impl CGenerator {
             self.inline.pop_front().unwrap_or_default())
     }
 
-    fn gen_fun(&mut self, fun: &Function) -> String
-    {
-        let mut res: String = String::new();
-
-        let ret = self.get_type(fun.ret());
-        let id  = format!("nn_{}", fun.identifier());
-
-        let mut params = String::new();
-
-        for i in 0..fun.params().len()
-        {
-            let m   = if fun.params()[i].mutable() { "" } else { "const " };
-            let t   = self.get_type(fun.params()[i].ty());
-            let pid = fun.params()[i].identifier();
-            let v   = fun.params()[i].value();
-
-            if v.is_none() // C doesn't support default values
-            {
-                if i == fun.params().len() - 1 {
-                    params.push_str(&format!(" {}{} {}", m, t, pid));
-                } else {
-                    params.push_str(&format!("{}{} {},", m, t, pid));
-                }
-            }
-        }
-
-        let body = if fun.body().is_empty()
-        {
-            ";".to_string()
-        } else {
-            let mut bd = " {\n\n".to_string();
-            bd.push_str(&self.gen_block(fun.body()).0);
-            bd.push_str("\n}");
-            bd
-        };
-
-        res.push_str(&format!("{} {}({}){}\n\n", ret, id, params, body));
-
-        res
-    }
-
     fn gen_call(&mut self, vals: &[Value]) -> String
     {
         let mut res: String = String::new();
@@ -987,10 +951,6 @@ impl Backend for CGenerator {
         for item in prog.items()
         {
             match item {
-                Global::Fun(FunKind::Custom(fun)) => {
-                    let s = self.gen_fun(fun);
-                    self.out.push_str(&s);
-                },
                 Global::Fun(FunKind::Entry(fun)) => {
                     is_main = true;
                     let bd = self.gen_block(fun.body()).0;
@@ -1009,6 +969,7 @@ impl Backend for CGenerator {
                             mut_kw, c_ty, var.id));
                     }
                 },
+                _ => {}
             }
         }
 

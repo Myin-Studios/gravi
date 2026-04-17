@@ -32,10 +32,10 @@ impl Resolver {
                 },
                 Global::Fun(FunKind::Custom(f)) => {
                     self.symbols.add(f.identifier(), symbol::Symbol::Function(FunctionSym {
-                                                                                    params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone())).collect(),
+                                                                                    params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone(), p.list.clone())).collect(),
                                                                                     ret:    f.ret.clone(),
                                                                                     public: f.public,
-                                                                                    body:   None,
+                                                                                    body:   f.body.clone().into(),
                                                                                 }));
                 },
                 _ => {}
@@ -96,7 +96,7 @@ impl Resolver {
                                 crate::ast::Subspace::All => {
                                     if !f.public { self.rep.add(GraviError::throw(crate::error::Kind::PrivateImport(f.id.clone()))); }
                                     self.symbols.add(f.identifier(), symbol::Symbol::Function(FunctionSym {
-                                                                                    params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone())).collect(),
+                                                                                    params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone(), p.list.clone())).collect(),
                                                                                     ret:    f.ret.clone(),
                                                                                     public: f.public,
                                                                                     body:   Some(f.body.clone()),
@@ -107,7 +107,7 @@ impl Resolver {
                                         if !f.public { self.rep.add(GraviError::throw(crate::error::Kind::PrivateImport(f.id.clone()))); }
                                         
                                         self.symbols.add(f.identifier(), symbol::Symbol::Function(FunctionSym {
-                                                                                    params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone())).collect(),
+                                                                                    params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone(), p.list.clone())).collect(),
                                                                                     ret:    f.ret.clone(),
                                                                                     public: f.public,
                                                                                     body:   Some(f.body.clone()),

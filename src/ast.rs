@@ -78,7 +78,8 @@ pub struct VarDecl
     pub mutable: bool,
     pub id:      String,
     pub ty:      Type,
-    pub val:     Option<Value>
+    pub val:     Option<Value>,
+    pub list:    bool,
 }
 
 impl VarDecl {
@@ -90,16 +91,18 @@ impl VarDecl {
             mutable: false,
             id:      "".to_string(),
             ty:      Type::None,
-            val:     None
+            val:     None,
+            list:    false
         }
     }
 
-    pub fn parallelism(&self) -> &Parallelism { &self.par }
-    pub fn mutable(&self)     -> bool         { self.mutable }
-    pub fn identifier(&self)  -> &str         { &self.id }
-    pub fn ty(&self)          -> &Type        { &self.ty }
+    pub fn parallelism(&self) -> &Parallelism   { &self.par }
+    pub fn mutable(&self)     -> bool           { self.mutable }
+    pub fn identifier(&self)  -> &str           { &self.id }
+    pub fn ty(&self)          -> &Type          { &self.ty }
     pub fn value(&self)       -> &Option<Value> { &self.val }
-}
+    pub fn list(&self)        -> bool           { self.list }
+}   
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum BoolValue

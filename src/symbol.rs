@@ -10,7 +10,7 @@ pub enum Symbol {
 
 #[derive(Clone, Debug)]
 pub struct FunctionSym {
-    pub params: Vec<(String, Type, bool, Parallelism)>,
+    pub params: Vec<(String, Type, bool, Parallelism, bool)>,
     pub ret:    Type,
     pub public: bool,
     pub body:   Option<Vec<Items>>,
@@ -21,6 +21,7 @@ pub struct VariableSym {
     pub ty:      Type,
     pub mutable: bool,
     pub par:     Parallelism,
+    pub list:    bool,
 }
 
 #[derive(Clone, Debug)]
@@ -79,7 +80,7 @@ impl SymbolTable {
         self.scopes.iter().rev().any(|s| matches!(s.kind, ScopeKind::Loop))
     }
 
-    pub fn take(&mut self) -> Vec<(String, Type, Vec<(String, Type, bool, Parallelism)>, Vec<Items>)> {
+    pub fn take(&mut self) -> Vec<(String, Type, Vec<(String, Type, bool, Parallelism, bool)>, Vec<Items>)> {
         let mut result = Vec::new();
         if let Some(scope) = self.scopes.first_mut() {
             for (name, sym) in scope.symbols.iter_mut() {

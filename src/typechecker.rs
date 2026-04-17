@@ -25,8 +25,8 @@ impl Checker {
         let imported = symbol.take();
         for (name, ret, params, mut body) in imported {
             symbol.push(symbol::ScopeKind::Function(name.clone(), ret));
-            for (pname, pty, pmut, ppar) in &params {
-                symbol.add(pname, symbol::Symbol::Variable(VariableSym { ty: pty.clone(), mutable: *pmut, par: ppar.clone() }));
+            for (pname, pty, pmut, ppar, list) in &params {
+                symbol.add(pname, symbol::Symbol::Variable(VariableSym { ty: pty.clone(), mutable: *pmut, par: ppar.clone(), list: list.clone() }));
             }
             symbol.push(symbol::ScopeKind::Block);
             self.check_body(&mut body, symbol);
@@ -73,7 +73,8 @@ impl Checker {
                 {
                     mutable: param.mutable(),
                     ty:      param.ty().clone(),
-                    par:     param.parallelism().clone()
+                    par:     param.parallelism().clone(),
+                    list:    param.list()
                 }
             ));
         }
@@ -121,7 +122,8 @@ impl Checker {
                                 {
                                     mutable: v.mutable(),
                                     ty:      v.ty().clone(),
-                                    par:     v.parallelism().clone()
+                                    par:     v.parallelism().clone(),
+                                    list:    v.list()
                                 }
                             ));
                         },
@@ -153,7 +155,7 @@ impl Checker {
                 },
                 Items::Expr(Value::Call(id, vals)) => {
                     let param_types: Vec<Type> = if let Some(symbol::Symbol::Function(f)) = symbol.find(id) {
-                        f.params.iter().map(|(_, ty, _, _)| ty.clone()).collect()
+                        f.params.iter().map(|(_, ty, _, _, _)| ty.clone()).collect()
                     } else {
                         vec![]
                     };
@@ -193,12 +195,26 @@ impl Checker {
             Value::Boolean(_) => ty = Type::Boolean,
             Value::Call(id, vals) => {
                 let param_types: Vec<Type> = if let Some(symbol::Symbol::Function(f)) = symbol.find(id) {
-                    f.params.iter().map(|(_, ty, _, _)| ty.clone()).collect()
+                    f.params.iter().map(|(_, ty, _, _, _)| ty.clone()).collect()
                 } else {
                     vec![]
                 };
 
-                self.check_call(vals, &param_types, symbol);
+                if param_types.is_empty()
+                {
+                    ty = if let Some(sym) = symbol.find(id)
+                    {
+                        match sym {
+                            symbol::Symbol::Function(f) => f.ret.clone(),
+                            symbol::Symbol::Variable(_) => { Type::None }
+                        }
+                    } else {
+                        Type::None
+                    }
+                }
+                else {
+                    ty = self.check_call(vals, &param_types, symbol);
+                }
             },
             Value::Null => ty = Type::None,
             Value::Block(bty, b) => {

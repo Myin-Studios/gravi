@@ -210,14 +210,12 @@ impl Parser {
         let mut id:  String = String::new();
         let mut ty:  Type   = Type::None;
         let mut val: Option<Value> = None;
+        let mut list: bool = false;
 
         loop {
             if let Some(t) = tokens.pop() {
                 match t.kind()
                 {
-                    TokenKind::Type(t) => {
-                        ty = t.to_owned();
-                    },
                     TokenKind::Identifier(idt) => {
                         id = idt.to_string();
                     },
@@ -229,11 +227,19 @@ impl Parser {
                                 break;
                             },
                             Punctuation::Colon => {
-                                if let Some(next) = tokens.last()
-                                {
+                                if let Some(next) = tokens.last() {
                                     match next.kind() {
                                         TokenKind::Type(t) => {
                                             ty = t.to_owned();
+                                            tokens.pop();
+
+                                            if tokens.last().map(|t| t.kind()) == Some(&TokenKind::Punctuation(Punctuation::LBracket)) {
+                                                tokens.pop();
+                                                if tokens.last().map(|t| t.kind()) == Some(&TokenKind::Punctuation(Punctuation::RBracket)) {
+                                                    tokens.pop();
+                                                    list = true;
+                                                }
+                                            }
                                         },
                                         _ => {
                                             self.rep.add(GraviError::throw(crate::error::Kind::ExpectedReturnType)
@@ -243,9 +249,7 @@ impl Parser {
 
                                             break;
                                         }
-                                    };
-
-                                    tokens.pop();
+                                    }
                                 }
                             },
                             Punctuation::RParen => {
@@ -270,7 +274,8 @@ impl Parser {
             }
         }
 
-        VarDecl { par: par.clone(), mutable, id, ty, val }
+        println!("{}", list);
+        VarDecl { par: par.clone(), mutable, id, ty, val, list }
     }
 
     fn parse_var(&mut self, tokens: &mut Vec<Token>) -> Variable
@@ -740,104 +745,77 @@ impl Parser {
 
         let main = id == "main";
 
-        let mut params: Vec<VarDecl> = Vec::new();
-        let mut ret  = Type::None;
-        let mut body: Vec<Items> = Vec::new();
+        let mut params = Vec::new();
+        let mut ret    = Type::None;
+        let mut body   = Vec::new();
 
         loop {
-            if let Some(t) = tokens.pop()
-            {
-                if t.kind() == &TokenKind::Punctuation(Punctuation::LParen)
-                {
-                    loop {
-                        let mut par     = Parallelism::None;
-                        let mut mutable = false;
-
-                        if let Some(next) = tokens.last() {
-                            if next.kind() == &TokenKind::Punctuation(Punctuation::RParen) {
-                                tokens.pop();
-                                break;
-                            }
-                            else if next.kind() == &TokenKind::Keyword(Keyword::Mut) {
-                                mutable = true;
-                                tokens.pop();
-                            }
-                            else if next.kind() == &TokenKind::Keyword(Keyword::PAR) {
-                                par = Parallelism::CPU;
-                                tokens.pop();
-                            }
-                            else if next.kind() == &TokenKind::Keyword(Keyword::GPU) {
-                                par = Parallelism::GPU;
-                                tokens.pop();
-                            }
-                        } else {
-                            self.rep.add(GraviError::throw(crate::error::Kind::UnclosedParenthesis)
-                                            .file(t.file())
-                                            .at(t.line(), t.column())
-                                            .hint(format!("Try writing {} to close the parameters declaration.", ")".bright_blue().bold()).as_str()));
-                            break;
-                        }
-
-                        params.push(self.parse_var_decl(&par, mutable, tokens));
-
-                        if let Some(next) = tokens.last() {
-                            if next.kind() == &TokenKind::Punctuation(Punctuation::RParen) {
-                                tokens.pop();
-                                break;
-                            } else if next.kind() != &TokenKind::Punctuation(Punctuation::Comma)
-                                   && next.kind() != &TokenKind::Keyword(Keyword::Mut)
-                                   && next.kind() != &TokenKind::Keyword(Keyword::PAR)
-                                   && next.kind() != &TokenKind::Keyword(Keyword::GPU)
-                                   && !matches!(next.kind(), TokenKind::Identifier(_))
-                            {
-                                self.rep.add(GraviError::throw(crate::error::Kind::UnclosedParenthesis)
-                                    .file(t.file())
-                                    .at(t.line(), t.column())
-                                    .hint(format!("Try writing {} to close the parameters declaration.", ")".bright_blue().bold()).as_str()));
-                                break;
-                            }
+            match tokens.last().map(|t| t.kind().clone()) {
+                Some(TokenKind::Punctuation(Punctuation::LParen)) => {
+                    params = self.parse_params(tokens); // gestisce `(` internamente
+                },
+                Some(TokenKind::Punctuation(Punctuation::Colon)) => {
+                    tokens.pop();
+                    if let Some(t) = tokens.pop() {
+                        if let TokenKind::Type(ty) = t.kind() {
+                            ret = ty.clone();
                         }
                     }
-                }
-                else if t.kind() == &TokenKind::Punctuation(Punctuation::Colon) {
-                    if let Some(next) = tokens.last()
-                    {
-                        match next.kind() {
-                            TokenKind::Type(ty) => {
-                                ret = ty.to_owned();
-                                tokens.pop();
-                            },
-                            _ => {
-                                self.rep.add(GraviError::throw(crate::error::Kind::ExpectedReturnType)
-                                            .file(t.file())
-                                            .at(t.line(), t.column())
-                                            .hint(format!("Try writing a valid return type, like numerics (u16, i16, f16, ...), string, bool or a user-defined type.\nBefore that, I'll consider this function with \"{}\" as its return type!", "none".bright_blue().bold()).as_str()));
-                            }
-                        }
-                    }
-                }
-                else if t.kind() == &TokenKind::Punctuation(Punctuation::LBrace) {
-                    body.extend(self.parse_block(tokens, false));
-                }
-                else if t.kind() == &TokenKind::Punctuation(Punctuation::SemiColon)
-                    || t.kind() == &TokenKind::Punctuation(Punctuation::RBrace) {
+                },
+                Some(TokenKind::Punctuation(Punctuation::LBrace)) => {
+                    tokens.pop();
+                    body = self.parse_block(tokens, false);
                     break;
-                }
-                else {
+                },
+                Some(TokenKind::Punctuation(Punctuation::SemiColon | Punctuation::RBrace)) => {
+                    tokens.pop();
                     break;
-                }
-            }
-            else {
-                break;
+                },
+                _ => break,
             }
         }
 
         if main {
             Global::Fun(FunKind::Entry(Function { public, lambda: false, id: "main".to_string(), params, ret, body }))
-        }
-        else {
+        } else {
             Global::Fun(FunKind::Custom(Function { public, lambda: false, id, params, ret, body }))
         }
+    }
+
+    fn parse_params(&mut self, tokens: &mut Vec<Token>) -> Vec<VarDecl> {
+        let mut params = Vec::new();
+
+        tokens.pop();
+
+        loop {
+            match tokens.last().map(|t| t.kind().clone()) {
+                Some(TokenKind::Punctuation(Punctuation::RParen)) => {
+                    tokens.pop();
+                    break;
+                },
+                Some(TokenKind::Punctuation(Punctuation::Comma)) => {
+                    tokens.pop();
+                },
+                None => break,
+                _ => {
+                    let mut par     = Parallelism::None;
+                    let mut mutable = false;
+
+                    loop {
+                        match tokens.last().map(|t| t.kind().clone()) {
+                            Some(TokenKind::Keyword(Keyword::Mut)) => { mutable = true; tokens.pop(); },
+                            Some(TokenKind::Keyword(Keyword::PAR)) => { par = Parallelism::CPU; tokens.pop(); },
+                            Some(TokenKind::Keyword(Keyword::GPU)) => { par = Parallelism::GPU; tokens.pop(); },
+                            _ => break,
+                        }
+                    }
+
+                    params.push(self.parse_var_decl(&par, mutable, tokens));
+                }
+            }
+        }
+
+        params
     }
 
     fn parse_block(&mut self, tokens: &mut Vec<Token>, top_level: bool) -> Vec<Items>
@@ -1104,7 +1082,8 @@ impl Parser {
                     mutable: false,
                     id: index,
                     ty: Type::Numeric(Numeric::U32),
-                    val: Some(val)
+                    val: Some(val),
+                    list: false,
                 }));
             },
             _ => {}
@@ -1170,6 +1149,6 @@ impl Parser {
     }
 
     pub fn reporter(&self) -> &Reporter          { &self.rep }
-    pub fn output(&self)   -> &Program           { /*println!("{:#?}", self.prog);*/ &self.prog }
+    pub fn output(&self)   -> &Program           { println!("{:#?}", self.prog); &self.prog }
     pub fn output_mut(&mut self) -> &mut Program { &mut self.prog }
 }

@@ -1,6 +1,6 @@
 use colored::Colorize;
 
-use crate::{error::{NyonError, Reporter}, lexer::*, ast::*};
+use crate::{error::{GraviError, Reporter}, lexer::*, ast::*};
 
 #[derive(Clone, Debug)]
 pub struct Parser
@@ -236,7 +236,7 @@ impl Parser {
                                             ty = t.to_owned();
                                         },
                                         _ => {
-                                            self.rep.add(NyonError::throw(crate::error::Kind::ExpectedReturnType)
+                                            self.rep.add(GraviError::throw(crate::error::Kind::ExpectedReturnType)
                                                                     .file(t.file())
                                                                     .at(t.line(), t.column())
                                                                     .hint(format!("Try writing a valid type, like numerics (u16, i16, f16, ...), string, bool or a user-defined type.\nBefore that, I'll consider this function with \"{}\" as its type!", "none".bright_blue().bold()).as_str()));
@@ -256,7 +256,7 @@ impl Parser {
                         }
                     },
                     _ => {
-                        self.rep.add(NyonError::throw(crate::error::Kind::UnexpectedToken(t.clone()))
+                        self.rep.add(GraviError::throw(crate::error::Kind::UnexpectedToken(t.clone()))
                                                 .file(t.file())
                                                 .at(t.line(), t.column())
                                                 .hint(format!("Try writing a valid token here. I don't know, like \"{}: {} = {};\"", "myvar".bright_blue().bold(), "mytype".bright_blue().bold(), "myvalue".bright_blue().bold()).as_str()));
@@ -403,7 +403,7 @@ impl Parser {
                         break;
                     },
                     TokenKind::Punctuation(Punctuation::RBrace) => {
-                        self.rep.add(NyonError::throw(crate::error::Kind::UnclosedParenthesis)
+                        self.rep.add(GraviError::throw(crate::error::Kind::UnclosedParenthesis)
                                                 .file(t.file())
                                                 .at(t.line(), t.column())
                                                 .hint(format!("Try writing {} to close the expression before this token.", "}".bright_blue().bold()).as_str()));
@@ -417,7 +417,7 @@ impl Parser {
                     },
                     TokenKind::Punctuation(Punctuation::SemiColon) => break,
                     _ => {
-                        self.rep.add(NyonError::throw(crate::error::Kind::ExpectedValue)
+                        self.rep.add(GraviError::throw(crate::error::Kind::ExpectedValue)
                                                 .file(t.file())
                                                 .at(t.line(), t.column())
                                                 .hint("Write a valid value here, like a binary expression, an identifier, a literal (string or numeric), a range and so on."));
@@ -611,13 +611,13 @@ impl Parser {
                         if closing.kind() == &TokenKind::Punctuation(Punctuation::RParen) {
                             tokens.pop();
                         } else {
-                            self.rep.add(NyonError::throw(crate::error::Kind::UnclosedParenthesis)
+                            self.rep.add(GraviError::throw(crate::error::Kind::UnclosedParenthesis)
                                 .file(t.file())
                                 .at(t.line(), t.column())
                                 .hint(format!("Try writing {} to close the grouped expression.", ")".bright_blue().bold()).as_str()));
                         }
                     } else {
-                        self.rep.add(NyonError::throw(crate::error::Kind::UnclosedParenthesis)
+                        self.rep.add(GraviError::throw(crate::error::Kind::UnclosedParenthesis)
                             .file(t.file())
                             .at(t.line(), t.column())
                             .hint(format!("Try writing {} to close the grouped expression.", ")".bright_blue().bold()).as_str()));
@@ -634,7 +634,7 @@ impl Parser {
                             })
                         },
                         _ => {
-                            self.rep.add(NyonError::throw(crate::error::Kind::UnexpectedToken(t.clone()))
+                            self.rep.add(GraviError::throw(crate::error::Kind::UnexpectedToken(t.clone()))
                                                 .file(t.file())
                                                 .at(t.line(), t.column())
                                                 .hint("Try writing a valid expression here, like a binary expression, a boolean expression, an identifier, a literal or a range."));
@@ -644,7 +644,7 @@ impl Parser {
                     }
                 },
                 _ => {
-                    self.rep.add(NyonError::throw(crate::error::Kind::UnexpectedToken(t.clone()))
+                    self.rep.add(GraviError::throw(crate::error::Kind::UnexpectedToken(t.clone()))
                                                 .file(t.file())
                                                 .at(t.line(), t.column())
                                                 .hint("Try writing a valid expression here, like a binary expression, a boolean expression, an identifier, a literal or a range."));
@@ -727,7 +727,7 @@ impl Parser {
             match t.kind() {
                 TokenKind::Identifier(s) => s.to_string(),
                 _ => {
-                    self.rep.add(NyonError::throw(crate::error::Kind::ExpectedFunctionName)
+                    self.rep.add(GraviError::throw(crate::error::Kind::ExpectedFunctionName)
                                             .file(t.file())
                                             .at(t.line(), t.column())
                                             .hint("Try typing a name without numbers or special characters as first character!"));
@@ -771,7 +771,7 @@ impl Parser {
                                 tokens.pop();
                             }
                         } else {
-                            self.rep.add(NyonError::throw(crate::error::Kind::UnclosedParenthesis)
+                            self.rep.add(GraviError::throw(crate::error::Kind::UnclosedParenthesis)
                                             .file(t.file())
                                             .at(t.line(), t.column())
                                             .hint(format!("Try writing {} to close the parameters declaration.", ")".bright_blue().bold()).as_str()));
@@ -790,7 +790,7 @@ impl Parser {
                                    && next.kind() != &TokenKind::Keyword(Keyword::GPU)
                                    && !matches!(next.kind(), TokenKind::Identifier(_))
                             {
-                                self.rep.add(NyonError::throw(crate::error::Kind::UnclosedParenthesis)
+                                self.rep.add(GraviError::throw(crate::error::Kind::UnclosedParenthesis)
                                     .file(t.file())
                                     .at(t.line(), t.column())
                                     .hint(format!("Try writing {} to close the parameters declaration.", ")".bright_blue().bold()).as_str()));
@@ -808,7 +808,7 @@ impl Parser {
                                 tokens.pop();
                             },
                             _ => {
-                                self.rep.add(NyonError::throw(crate::error::Kind::ExpectedReturnType)
+                                self.rep.add(GraviError::throw(crate::error::Kind::ExpectedReturnType)
                                             .file(t.file())
                                             .at(t.line(), t.column())
                                             .hint(format!("Try writing a valid return type, like numerics (u16, i16, f16, ...), string, bool or a user-defined type.\nBefore that, I'll consider this function with \"{}\" as its return type!", "none".bright_blue().bold()).as_str()));
@@ -873,7 +873,7 @@ impl Parser {
                                 mutable = false;
                             },
                             Keyword::Fun if !top_level => {
-                                self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
+                                self.rep.add(GraviError::throw(crate::error::Kind::UnsupportedStatement)
                                             .file(t.file())
                                             .at(t.line(), t.column())
                                             .hint(format!("Write a valid statement, like variable declarations, if-else statement, loop...\n\tYour nice function can't be declared inside a code block: \"{} ... {}\"!", "{".bright_blue().bold(), "}".bright_blue().bold()).as_str()));
@@ -894,7 +894,7 @@ impl Parser {
                                 stmts.push(Items::Skip);
                             },
                             _ => {
-                                self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedStatement)
+                                self.rep.add(GraviError::throw(crate::error::Kind::UnsupportedStatement)
                                             .file(t.file())
                                             .at(t.line(), t.column())
                                             .hint("Write a valid statement, like variable declarations, if-else statement, loop...\n\tNot function/class/interface declaration!"));
@@ -952,7 +952,7 @@ impl Parser {
             } else {
                 if let Some(t) = tok
                 {
-                    self.rep.add(NyonError::throw(crate::error::Kind::UnclosedParenthesis)
+                    self.rep.add(GraviError::throw(crate::error::Kind::UnclosedParenthesis)
                                             .file(t.file())
                                             .at(t.line(), t.column())
                                             .hint(format!("Try writing {} to close the parameters list.", ")".bright_blue().bold()).as_str()));
@@ -1144,7 +1144,7 @@ impl Parser {
                             break;
                         } else {
                             // error! invalid token
-                            self.rep.add(NyonError::throw(crate::error::Kind::UnexpectedToken(t)));
+                            self.rep.add(GraviError::throw(crate::error::Kind::UnexpectedToken(t)));
                             break;
                         }
                     },

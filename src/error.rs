@@ -41,7 +41,7 @@ pub enum Kind
 }
 
 #[derive(Clone, Debug)]
-pub struct NyonError {
+pub struct GraviError {
     kind:     Kind,
     severity: Severity,
     file:     Option<String>,
@@ -50,7 +50,7 @@ pub struct NyonError {
     hint:     Option<String>,
 }
 
-impl NyonError {
+impl GraviError {
     pub fn throw(kind: Kind) -> Self
     {
         Self
@@ -159,7 +159,7 @@ impl Kind {
 #[derive(Clone, Debug)]
 pub struct Reporter
 {
-    messages: Vec<NyonError>,
+    messages: Vec<GraviError>,
 }
 
 impl Reporter {
@@ -171,7 +171,7 @@ impl Reporter {
         }
     }
 
-    pub fn add(&mut self, msg: NyonError)
+    pub fn add(&mut self, msg: GraviError)
     {
         self.messages.push(msg);
     }

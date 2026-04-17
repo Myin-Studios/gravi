@@ -2,7 +2,7 @@ use std::{fmt, fs::File, io::Read};
 
 use colored::Colorize;
 
-use crate::error::{NyonError, Reporter};
+use crate::error::{GraviError, Reporter};
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Keyword
@@ -198,7 +198,7 @@ impl Lexer {
             Err(_) => {
                 let mut rep = Reporter::new();
 
-                rep.add(NyonError::throw(crate::error::Kind::FileNotFound(path.to_string()))
+                rep.add(GraviError::throw(crate::error::Kind::FileNotFound(path.to_string()))
                                     .hint("Try opening another file."));
 
                 Self
@@ -272,7 +272,7 @@ impl Lexer {
 
                         if nested > 0 {
                             for _ in 0..nested {
-                                self.rep.add(NyonError::throw(crate::error::Kind::UnterminatedComment)
+                                self.rep.add(GraviError::throw(crate::error::Kind::UnterminatedComment)
                                     .severity(crate::error::Severity::Warning)
                                     .file(&self.file)
                                     .at(start_line, start_col)
@@ -284,7 +284,7 @@ impl Lexer {
                     }
                     else if self.next() == '\0'
                     {
-                        self.rep.add(NyonError::throw(crate::error::Kind::UnterminatedComment)
+                        self.rep.add(GraviError::throw(crate::error::Kind::UnterminatedComment)
                                                 .file(&self.file)
                                                 .at(start_line, start_col)
                                                 .hint(format!("Try writing {} to end your monologue.", "*/".bright_blue().bold()).as_str()));
@@ -315,7 +315,7 @@ impl Lexer {
                 word.push(self.advance());
             }
             else if self.next() == '\n' || self.next() == '\0' {
-                self.rep.add(NyonError::throw(crate::error::Kind::UnterminatedString)
+                self.rep.add(GraviError::throw(crate::error::Kind::UnterminatedString)
                                                 .file(&self.file)
                                                 .at(self.line, self.column)
                                                 .hint(format!("Try writing {} to end your monologue.", "\"".bright_blue().bold()).as_str()));
@@ -545,7 +545,7 @@ impl Lexer {
 
                 if self.next() == '\0'
                 {
-                    self.rep.add(NyonError::throw(crate::error::Kind::UnterminatedString)
+                    self.rep.add(GraviError::throw(crate::error::Kind::UnterminatedString)
                                         .file(&self.file)
                                         .at(self.line, self.column)
                                         .hint(format!("Close with '{}'", "\"".bright_blue().bold()).as_str()));
@@ -593,7 +593,7 @@ impl Lexer {
                 word.push_str(&self.read_op('='));
             },
             '#' | '@' | '$' | '_' => {
-                self.rep.add(NyonError::throw(crate::error::Kind::UnknownChar(self.next()))
+                self.rep.add(GraviError::throw(crate::error::Kind::UnknownChar(self.next()))
                                         .file(&self.file)
                                         .at(self.line, self.column)
                                         .hint("Try removing it."));

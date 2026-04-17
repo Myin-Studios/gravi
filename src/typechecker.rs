@@ -1,7 +1,7 @@
 use colored::Colorize;
 
 pub use crate::ast::*;
-use crate::{error::{NyonError, Reporter}, lexer::Type, symbol::{self, SymbolTable, VariableSym}};
+use crate::{error::{GraviError, Reporter}, lexer::Type, symbol::{self, SymbolTable, VariableSym}};
 
 /// Distinguishes how numeric bounds should be parsed in `in_range`.
 enum NumericKind { Unsigned, Signed, Float }
@@ -46,7 +46,7 @@ impl Checker {
                 Global::Fun(FunKind::Entry(fun)) => {
                     if let Some(_) = symbol.find("main")
                     {
-                        self.rep.add(NyonError::throw(crate::error::Kind::TooManyEntry)
+                        self.rep.add(GraviError::throw(crate::error::Kind::TooManyEntry)
                                                 .hint(&format!("Try writing only one function {}", "main".bright_blue().bold())));
                     }
 
@@ -111,7 +111,7 @@ impl Checker {
                                     let t = self.check_val(&mut val.clone(), v.ty(), symbol);
                                     if t != v.ty().to_owned()
                                     {
-                                        self.rep.add(NyonError::throw(crate::error::Kind::TypeMismatch(v.ty.to_owned(), t)));
+                                        self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(v.ty.to_owned(), t)));
                                     }
                                 }
                             }
@@ -235,7 +235,7 @@ impl Checker {
 
                             if !self.is_compatible(&t, expected)
                             {
-                                self.rep.add(NyonError::throw(crate::error::Kind::TypeMismatch(expected.clone(), t)));
+                                self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(expected.clone(), t)));
                                 break;
                             }
                         }
@@ -268,7 +268,7 @@ impl Checker {
                     let found = self.check_val(val, expected, symbol);
                     if !self.is_compatible(&found, &ty)
                     {
-                        self.rep.add(NyonError::throw(crate::error::Kind::TypeMismatch(found, ty.clone())));
+                        self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(found, ty.clone())));
                     }
                 }
             },
@@ -308,7 +308,7 @@ impl Checker {
 
                 if l != r
                 {
-                    self.rep.add(NyonError::throw(crate::error::Kind::TypeMismatch(l.clone(), r)));
+                    self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(l.clone(), r)));
                 }
 
                 ty = l;
@@ -472,7 +472,7 @@ impl Checker {
 
             if ty != elif_ty
             {
-                self.rep.add(NyonError::throw(crate::error::Kind::TypeMismatch(ty.clone(), elif_ty)));
+                self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(ty.clone(), elif_ty)));
             }
             else if elif.ret.is_none()
             {
@@ -494,7 +494,7 @@ impl Checker {
             let ty = self.check_val(val, &Type::None, symbol);
             
             if !self.is_compatible(&ty, param_ty) && param_ty != &Type::None {
-                self.rep.add(NyonError::throw(crate::error::Kind::TypeMismatch(param_ty.clone(), ty)));
+                self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(param_ty.clone(), ty)));
             }
         }
 

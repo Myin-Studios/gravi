@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{ast::{FunKind, Global, Program, Space}, error::{NyonError, Reporter}, lex, parse, symbol::{self, FunctionSym, SymbolTable}};
+use crate::{ast::{FunKind, Global, Program, Space}, error::{GraviError, Reporter}, lex, parse, symbol::{self, FunctionSym, SymbolTable}};
 
 pub struct Resolver
 {
@@ -94,7 +94,7 @@ impl Resolver {
                         Global::Fun(FunKind::Custom(f)) | Global::Fun(FunKind::Entry(f)) => {
                             match sub.clone() {
                                 crate::ast::Subspace::All => {
-                                    if !f.public { self.rep.add(NyonError::throw(crate::error::Kind::PrivateImport(f.id.clone()))); }
+                                    if !f.public { self.rep.add(GraviError::throw(crate::error::Kind::PrivateImport(f.id.clone()))); }
                                     self.symbols.add(f.identifier(), symbol::Symbol::Function(FunctionSym {
                                                                                     params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone())).collect(),
                                                                                     ret:    f.ret.clone(),
@@ -104,7 +104,7 @@ impl Resolver {
                                 },
                                 crate::ast::Subspace::Some(spaces) => {
                                     if spaces.iter().any(|s| s.name == f.id) {
-                                        if !f.public { self.rep.add(NyonError::throw(crate::error::Kind::PrivateImport(f.id.clone()))); }
+                                        if !f.public { self.rep.add(GraviError::throw(crate::error::Kind::PrivateImport(f.id.clone()))); }
                                         
                                         self.symbols.add(f.identifier(), symbol::Symbol::Function(FunctionSym {
                                                                                     params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone())).collect(),

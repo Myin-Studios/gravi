@@ -2,7 +2,7 @@ use std::collections::{HashSet, VecDeque};
 
 use colored::Colorize;
 
-use crate::{ast::*, backend::Backend, error::{NyonError, Reporter}, lexer::{Operator, Type}, symbol::{self, SymbolTable}};
+use crate::{ast::*, backend::Backend, error::{GraviError, Reporter}, lexer::{Operator, Type}, symbol::{self, SymbolTable}};
 
 pub struct CGenerator
 {
@@ -558,7 +558,7 @@ impl CGenerator {
             },
             Expr::Range(_) => {} // just ignore this. it's handled separately
             _ => {
-                self.rep.add(NyonError::throw(crate::error::Kind::UnsupportedExpression)
+                self.rep.add(GraviError::throw(crate::error::Kind::UnsupportedExpression)
                     .hint("Try writing a valid expression, like:\n\t- a binary expression: \"val1 op val2\"\n\t- a grouped expression \"(val1 op val2)\"\n\t- a boolean expression: \"a || b\" or \"a && b\"\n\t- a range: \"start:step:end\" (exclusive) or \"start:step::end\" (inclusive)\n\t- an identifier: named variable\n\t- a numeric literal: 1, 2, ... n or 1.x, 2.x, ..., n.x"));
             }
         };
@@ -1014,7 +1014,7 @@ impl Backend for CGenerator {
 
         if !is_main
         {
-            self.rep.add(NyonError::throw(crate::error::Kind::EntryNotFound)
+            self.rep.add(GraviError::throw(crate::error::Kind::EntryNotFound)
                                     .severity(crate::error::Severity::Warning)
                                     .hint(&format!("Write one and only one function {}. Not 0, not 2, not N, just 1!\n\tFor now I'll generate it for you... but be careful next time!", "main".bright_blue().bold())));
             self.out.push_str("int main()\n{\n");

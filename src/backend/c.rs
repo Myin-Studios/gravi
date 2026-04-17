@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use colored::Colorize;
 
@@ -11,6 +11,7 @@ pub struct CGenerator
     block_counter: usize,
     name_map:      Vec<(String, String, Type, bool)>,  // (original, mangled, type, is_list)
     inline:        VecDeque<String>,
+    fun_map:       HashMap<String, Type>,
 }
 
 impl CGenerator {
@@ -23,6 +24,7 @@ impl CGenerator {
             block_counter: 0,
             name_map:      Vec::new(),
             inline:        VecDeque::new(),
+            fun_map:       HashMap::new(),
         }
     }
 
@@ -99,6 +101,7 @@ impl CGenerator {
                                     }
                                     res.push_str(&helpers);
 
+                                    self.fun_map.insert(id.clone().to_string(), fun.ret.clone());
                                     res.push_str(&format!("{} nn_{}(", self.get_type(&fun.ret), id));
                                     for (i, (name, ty, mutable, _, list)) in fun.params.iter().enumerate() {
                                         let n = self.get_set_mangled(name);
@@ -115,8 +118,6 @@ impl CGenerator {
                                     res.push_str(&format!("{{\n{}\n}}\n", bd));
 
                                     self.name_map.truncate(params_start);
-                                } else {
-                                    res.push_str(&format!("{} nn_{}();\n", self.get_type(&fun.ret), id));
                                 }
                             },
                             symbol::Symbol::Variable(_) => {
@@ -368,6 +369,36 @@ impl CGenerator {
         res
     }
 
+    fn gen_fun(&mut self, fun: &Function) -> String
+    {
+        let mut res = String::new();
+
+        self.fun_map.insert(fun.identifier().to_string(), fun.ret().clone());
+        res.push_str(&format!("{} nn_{}({})\n{{\n{}\n}}\n", self.get_type(fun.ret()), fun.identifier(), self.gen_params(fun.params()), self.gen_block(fun.body()).0));
+
+        res
+    }
+
+    fn gen_params(&mut self, params: &[VarDecl]) -> String
+    {
+        let mut res = String::new();
+        
+        for (i, var) in params.iter().enumerate()
+        {
+            let mangled = self.register_var(var.identifier(), var.ty().clone(), var.list());
+            let mut ty = self.get_type(var.ty());
+            
+            if var.list() { ty.push('*'); }
+            
+            let mutable = if var.mutable() { "" } else { "const " };
+            
+            res.push_str(&format!("{}{} {}", mutable, ty, mangled));
+            if i < params.len() - 1 { res.push_str(", "); }
+        }
+
+        res
+    }
+
     fn gen_var(&mut self, var: &VarDecl) -> String
     {
         let mut res: String = String::new();
@@ -458,10 +489,11 @@ impl CGenerator {
                         mutable, ty, var.identifier(), self.gen_if_ternary(ifelse)));
                 },
                 Value::Loop(_) => {},
-                Value::List(List::Decl(_, Some(vals))) => {
+                Value::List(List::Decl(sz, Some(vals))) => {
                     let flat: Vec<&Value> = vals.iter().flatten().collect();
                     let mut all: Vec<String> = Vec::new();
-
+                    let size = self.gen_expr(sz);
+                    
                     for v in &flat {
                         match v {
                             Value::List(List::Use(src_id, src_indices, None)) => {
@@ -475,14 +507,17 @@ impl CGenerator {
                         }
                     }
 
+                    let s: usize = size.parse().unwrap_or(0);
                     let n        = all.len();
                     let list_val = all.join(", ");
 
-                    res.push_str(&format!("\tint sz_{} = {};\n", var.identifier(), n));
+                    let len = if s > n { s } else { n };
+
+                    res.push_str(&format!("\tint sz_{} = {};\n", var.identifier(), len));
                     if var.ty() == &Type::StringLiteral {
-                        res.push_str(&format!("\tchar {}[{}] = {{{}, '\\0'}};\n", var.identifier(), n + 1, list_val));
+                        res.push_str(&format!("\tchar {}[{}] = {{{}, '\\0'}};\n", var.identifier(), len + 1, list_val));
                     } else {
-                        res.push_str(&format!("\t{} {}[{}] = {{{}}};\n", ty, var.identifier(), n, list_val));
+                        res.push_str(&format!("\t{} {}[{}] = {{{}}};\n", ty, var.identifier(), len, list_val));
                     }
                 },
                 Value::List(List::Use(id, vals, _)) => {
@@ -885,7 +920,9 @@ impl CGenerator {
                     res.push_str(&format!("\tprintf(\"%s\\n\", \"{}\");\n", bstr));
                 },
                 Value::Call(id, values) => {
-                    res.push_str(&format!("\tprintf(\"%g\\n\", nn_{}({}));\n", id, self.gen_call(values)));
+                    let ret_ty = self.fun_map.get(id).cloned().unwrap_or(Type::None);
+                    let fmt = Self::printf_fmt(&ret_ty);
+                    res.push_str(&format!("\tprintf(\"{}\\n\", nn_{}({}));\n", fmt, id, self.gen_call(values)));
                 },
                 _ => {}
             }
@@ -950,6 +987,10 @@ impl Backend for CGenerator {
         for item in prog.items()
         {
             match item {
+                Global::Fun(FunKind::Custom(fun)) => {
+                    let s = self.gen_fun(fun);
+                    self.out.push_str(&s);
+                },
                 Global::Fun(FunKind::Entry(fun)) => {
                     is_main = true;
                     let bd = self.gen_block(fun.body()).0;
@@ -968,7 +1009,7 @@ impl Backend for CGenerator {
                             mut_kw, c_ty, var.id));
                     }
                 },
-                _ => {}
+                // _ => {}
             }
         }
 

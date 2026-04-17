@@ -306,16 +306,25 @@ impl Checker {
             Expr::Range(ran) => {
                 ty = self.check_range(ran, expected, symbol);
             },
-            Expr::Binary(b) | Expr::Boolean(b) => {
+            Expr::Binary(b) => {
                 let l = self.check_val(&mut Value::Expression(b.left().clone()), expected, symbol);
-                let r = self.check_val(&mut Value::Expression(b.right().clone()), expected, symbol);
-
-                if l != r
-                {
+                let r_expected = if *expected != Type::None { expected.clone() }
+                                else if l != Type::None    { l.clone() }
+                                else                       { Type::None };
+                let r = self.check_val(&mut Value::Expression(b.right().clone()), &r_expected, symbol);
+                if l != r && l != Type::None && r != Type::None {
+                    self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(l.clone(), r.clone())));
+                }
+                ty = if l != Type::None { l } else { r };
+            },
+            Expr::Boolean(b) => {
+                let l = self.check_val(&mut Value::Expression(b.left().clone()), &Type::None, symbol);
+                let r_expected = if l != Type::None { l.clone() } else { Type::None };
+                let r = self.check_val(&mut Value::Expression(b.right().clone()), &r_expected, symbol);
+                if l != r && l != Type::None && r != Type::None {
                     self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(l.clone(), r)));
                 }
-
-                ty = l;
+                ty = Type::Boolean;
             },
             Expr::Grouped(expr) => {
                 ty = self.check_expr(expr, expected, symbol);
@@ -495,7 +504,7 @@ impl Checker {
     fn check_call(&mut self, vals: &mut Vec<Value>, params: &[Type], symbol: &mut SymbolTable) -> Type {
         for (i, val) in vals.iter_mut().enumerate() {
             let param_ty = params.get(i).unwrap_or(&Type::None);
-            let ty = self.check_val(val, &Type::None, symbol);
+            let ty = self.check_val(val, param_ty, symbol);
             
             if !self.is_compatible(&ty, param_ty) && param_ty != &Type::None {
                 self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(param_ty.clone(), ty)));

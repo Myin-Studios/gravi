@@ -20,6 +20,7 @@ impl Resolver {
 
     pub fn process(&mut self, program: &Program, dirname: &str)
     {
+        self.symbols.push(symbol::ScopeKind::Global);
         for item in program.items()
         {
             match item {
@@ -35,7 +36,7 @@ impl Resolver {
                                                                                     params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone(), p.list.clone())).collect(),
                                                                                     ret:    f.ret.clone(),
                                                                                     public: f.public,
-                                                                                    body:   f.body.clone().into(),
+                                                                                    body:   None,
                                                                                 }));
                 },
                 _ => {}

@@ -274,7 +274,6 @@ impl Parser {
             }
         }
 
-        println!("{}", list);
         VarDecl { par: par.clone(), mutable, id, ty, val, list }
     }
 
@@ -350,7 +349,7 @@ impl Parser {
                         val = Value::Expression(self.parse_binary(tokens, 0));
                         break;
                     },
-                    TokenKind::Operator(Operator::LNot) => {
+                    TokenKind::Operator(Operator::LNot | Operator::Sub) => {
                         val = Value::Expression(self.parse_binary(tokens, 0));
                         break;
                     },
@@ -377,8 +376,8 @@ impl Parser {
                                 return Value::Call(v, params);
                             }
                             else if next.kind() == &TokenKind::Punctuation(Punctuation::LBracket) {
-                                let (indices, values) = self.parse_list(tokens);
-                                return Value::List(List::Use(v, indices, values));
+                                tokens.push(temp);
+                                return Value::Expression(self.parse_binary(tokens, 0));
                             }
                             else {
                                 tokens.push(temp);
@@ -607,7 +606,19 @@ impl Parser {
         if let Some(t) = tokens.pop()
         {
             match t.kind() {
-                TokenKind::Identifier(id) => Expr::Identifier(id.to_string()),
+                TokenKind::Identifier(id) => {
+                    let id = id.to_string();
+                    if tokens.last().map(|t| t.kind()) == Some(&TokenKind::Punctuation(Punctuation::LBracket)) {
+                        tokens.pop();
+                        let idx = self.parse_binary(tokens, 0);
+                        if tokens.last().map(|t| t.kind()) == Some(&TokenKind::Punctuation(Punctuation::RBracket)) {
+                            tokens.pop();
+                        }
+                        Expr::Index(id, Box::new(idx))
+                    } else {
+                        Expr::Identifier(id)
+                    }
+                },
                 TokenKind::Value(val)     => Expr::Literal(val.to_string()),
                 TokenKind::Punctuation(Punctuation::LParen) => {
                     let inner = self.parse_binary(tokens, 0);
@@ -635,6 +646,12 @@ impl Parser {
                         Operator::LNot => {
                             Expr::Unary(Unary {
                                 op:    Operator::LNot,
+                                right: Box::new(self.parse_factor(tokens))
+                            })
+                        },
+                        Operator::Sub => {
+                            Expr::Unary(Unary {
+                                op:    Operator::Sub,
                                 right: Box::new(self.parse_factor(tokens))
                             })
                         },
@@ -959,7 +976,7 @@ impl Parser {
 
     fn parse_if(&mut self, tokens: &mut Vec<Token>, is_else: bool) -> IfElse
     {
-        let mut cond: Option<Expr>      = None;
+        let mut cond: Option<Box<Value>>      = None;
         let mut body: Vec<Items>        = Vec::new();
         let mut elif: Option<Box<IfElse>> = None;
 
@@ -971,7 +988,7 @@ impl Parser {
                         if is_else {
                             break;
                         }
-                        cond = Some(self.parse_binary(tokens, 0));
+                        cond = Some(Box::new(self.parse_value(tokens)));
                     },
                     TokenKind::Punctuation(Punctuation::LBrace) => {
                         tokens.pop();
@@ -1149,6 +1166,6 @@ impl Parser {
     }
 
     pub fn reporter(&self) -> &Reporter          { &self.rep }
-    pub fn output(&self)   -> &Program           { println!("{:#?}", self.prog); &self.prog }
+    pub fn output(&self)   -> &Program           { &self.prog }
     pub fn output_mut(&mut self) -> &mut Program { &mut self.prog }
 }

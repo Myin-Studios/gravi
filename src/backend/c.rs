@@ -35,7 +35,7 @@ impl CGenerator {
                     crate::lexer::Numeric::U16 => "unsigned short".to_string(),
                     crate::lexer::Numeric::U32 => "unsigned int".to_string(),
                     crate::lexer::Numeric::U64 => "unsigned long".to_string(),
-                    crate::lexer::Numeric::I8  => "char".to_string(),
+                    crate::lexer::Numeric::I8  => "signed char".to_string(),
                     crate::lexer::Numeric::I16 => "short".to_string(),
                     crate::lexer::Numeric::I32 => "int".to_string(),
                     crate::lexer::Numeric::I64 => "long".to_string(),
@@ -413,8 +413,14 @@ impl CGenerator {
                                 res.push_str("\t}\n\n");
                             }
                             else {
+                                let s_val: i64 = start.parse().unwrap_or(0);
+                                let e_val: i64 = end.parse().unwrap_or(0);
+                                let descending = s_val > e_val;
+                                let (bigger, smaller) = if descending { (&start, &end) } else { (&end, &start) };
+                                let dir = if descending { "-" } else { "+" };
+
                                 res.push_str(&format!("\tint sz_{} = (int)floor(({} - {}) / {}){};\n",
-                                    var.identifier(), end, start, step, incl));
+                                    var.identifier(), bigger, smaller, step, incl));
                                 res.push_str(&format!("\t{}* {} = malloc(sz_{} * sizeof({}));\n",
                                     ty, var.identifier(), var.identifier(), ty));
 
@@ -424,7 +430,7 @@ impl CGenerator {
                                 };
 
                                 res.push_str(&format!("\tfor (int i = 0; i < sz_{}; i++) {{\n", var.identifier()));
-                                res.push_str(&format!("\t\t{}[i] = {} + i * {};\n", var.identifier(), start, step));
+                                res.push_str(&format!("\t\t{}[i] = {} {} i * {};\n", var.identifier(), start, dir, step));
                                 res.push_str("\t}\n");
                             }
                         },
@@ -516,6 +522,10 @@ impl CGenerator {
 
         match expr {
             Expr::Identifier(id) => res = self.get_set_mangled(id),
+            Expr::Index(id, idx) => {
+                let mangled = self.get_set_mangled(id);
+                res = format!("{}[{}]", mangled, self.gen_expr(idx));
+            },
             Expr::Literal(val)   => res = val.to_string(),
             Expr::Binary(b) => {
                 let op = match b.op() {
@@ -613,7 +623,7 @@ impl CGenerator {
 
                             let mut mangled = v.clone();
                             let is_list = if let Some(val) = &v.val {
-                                matches!(val, Value::List(_))
+                                matches!(val, Value::List(_)) || matches!(val, Value::Expression(crate::ast::Expr::Range(_)))
                             } else {
                                 future_list_names.contains(&v.id)
                             };
@@ -691,6 +701,12 @@ impl CGenerator {
 
                                                     let id = self.register_var(cond.identifier(), cond.ty().to_owned(), false);
 
+                                                    // res.push_str(&format!("\tif ({} > {}) {{\n", start, end));
+                                                    // res.push_str(&format!("\t\tint tmp = {};\n", start));
+                                                    // res.push_str(&format!("\t\t{} = {};\n", start, end));
+                                                    // res.push_str(&format!("\t\t{} = tmp;\n", end));
+                                                    // res.push_str("\t}}\n");
+
                                                     if s < e
                                                     {
                                                         res.push_str(&format!("\tfor (int {} = {}; {} <= {}; {}++)\n", id, s,
@@ -699,9 +715,16 @@ impl CGenerator {
                                                                                                                         ));
                                                         res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
                                                     }
-                                                    else {
+                                                    else if s > e {
                                                         res.push_str(&format!("\tfor (int {} = {}; {} >= {}; {}--)\n", id, s,
                                                                                                                         id, e,
+                                                                                                                        id
+                                                                                                                        ));
+                                                        res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
+                                                    }
+                                                    else {
+                                                        res.push_str(&format!("\tfor (int {} = {}; {} <= {}; {}++)\n", id, start,
+                                                                                                                        id, end,
                                                                                                                         id
                                                                                                                         ));
                                                         res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
@@ -779,7 +802,7 @@ impl CGenerator {
     {
         let mut res = String::new();
 
-        res.push_str(&format!("\tif ({})", self.gen_expr(ifelse.condition().as_ref().unwrap_or(&Expr::Null))));
+        res.push_str(&format!("\tif ({})", self.gen_val(ifelse.condition().as_ref().unwrap_or(&Box::new(Value::Null)))));
         res.push_str("\n\t{\n");
         res.push_str(&format!("\t{}", self.gen_block(ifelse.body()).0));
         res.push_str("\n\t}\n");
@@ -803,7 +826,7 @@ impl CGenerator {
     fn gen_if_ternary(&mut self, ifelse: &IfElse) -> String
     {
         format!("({}) ? {} : {}",   // niente () extra
-            self.gen_expr(ifelse.condition().as_ref().unwrap_or(&Expr::Null)),
+            self.gen_val(ifelse.condition().as_ref().unwrap_or(&Box::new(Value::Null))),
             self.inline.pop_front().unwrap_or_default(),
             self.inline.pop_front().unwrap_or_default())
     }
@@ -870,6 +893,12 @@ impl CGenerator {
                         res.push_str(&format!("\tprintf(\"{}\\n\", {}[{}]);\n",
                             elem_fmt, mangled, self.gen_val(v)));
                     }
+                },
+                Value::Expression(Expr::Index(id, idx)) => {
+                    let mangled  = self.get_set_mangled(id);
+                    let ty       = self.type_of_var(id);
+                    let elem_fmt = if ty == Type::StringLiteral { "%c" } else { Self::printf_fmt(&ty) };
+                    res.push_str(&format!("\tprintf(\"{}\\n\", {}[{}]);\n", elem_fmt, mangled, self.gen_expr(idx)));
                 },
                 Value::Expression(Expr::Literal(lit)) => {
                     let fmt = if lit.contains('.') { "%g" } else { "%d" };

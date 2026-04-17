@@ -193,27 +193,15 @@ impl Checker {
                 ty = Type::StringLiteral;
             },
             Value::Boolean(_) => ty = Type::Boolean,
-            Value::Call(id, vals) => {
-                let param_types: Vec<Type> = if let Some(symbol::Symbol::Function(f)) = symbol.find(id) {
-                    f.params.iter().map(|(_, ty, _, _, _)| ty.clone()).collect()
-                } else {
-                    vec![]
-                };
-
-                if param_types.is_empty()
+            Value::Call(id, _) => {
+                ty = if let Some(sym) = symbol.find(id)
                 {
-                    ty = if let Some(sym) = symbol.find(id)
-                    {
-                        match sym {
-                            symbol::Symbol::Function(f) => f.ret.clone(),
-                            symbol::Symbol::Variable(_) => { Type::None }
-                        }
-                    } else {
-                        Type::None
+                    match sym {
+                        symbol::Symbol::Function(f) => f.ret.clone(),
+                        symbol::Symbol::Variable(_) => { Type::None }
                     }
-                }
-                else {
-                    ty = self.check_call(vals, &param_types, symbol);
+                } else {
+                    Type::None
                 }
             },
             Value::Null => ty = Type::None,

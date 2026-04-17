@@ -114,7 +114,7 @@ pub enum BoolValue
 #[derive(Debug, Clone)]
 pub struct IfElse
 {
-    pub cond: Option<Expr>,
+    pub cond: Option<Box<Value>>,
     pub body: Vec<Items>,
     pub elif: Option<Box<IfElse>>,
     pub ret:  Option<Type>
@@ -132,7 +132,7 @@ impl IfElse {
         }
     }
 
-    pub fn condition(&self) -> &Option<Expr>  { &self.cond }
+    pub fn condition(&self) -> &Option<Box<Value>>  { &self.cond }
     pub fn body(&self)      -> &[Items]        { &self.body }
     pub fn else_if(&self)   -> Option<&IfElse> { self.elif.as_deref() }
     pub fn ret(&self)       -> &Option<Type>   { &self.ret }
@@ -220,6 +220,7 @@ pub enum Expr
 {
     Literal(String),
     Identifier(String),
+    Index(String, Box<Expr>),
     Range(Range),
     Binary(BinaryOp),
     Boolean(BinaryOp),

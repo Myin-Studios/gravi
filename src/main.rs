@@ -79,10 +79,10 @@ pub fn parse(tokens: &mut Vec<lexer::Token>) -> parser::Parser
     p
 }
 
-fn resolve(prog: &ast::Program) -> resolver::Resolver
+fn resolve(prog: &ast::Program, dirname: &str) -> resolver::Resolver
 {
     let mut r = resolver::Resolver::new();
-    r.process(prog);
+    r.process(prog, &dirname);
     r
 }
 
@@ -116,7 +116,7 @@ fn compile(c_src: &str, filename: &str, ty: &BackendType) -> std::io::Result<std
     }
 }
 
-fn build(input: String, filename: &str, ty: BackendType, target: Target, flag: BuildFlag)
+fn build(input: String, filename: &str, dirname: &str, ty: BackendType, target: Target, flag: BuildFlag)
 {
     let mut l = lex(input.as_str());
     l.reporter().fire_all();
@@ -126,7 +126,7 @@ fn build(input: String, filename: &str, ty: BackendType, target: Target, flag: B
     p.reporter().fire_all();
     if p.reporter().has_errors() { std::process::exit(1); }
 
-    let mut r = resolve(p.output());
+    let mut r = resolve(p.output(), &dirname);
     r.reporter().fire_all();
     if r.reporter().has_errors() { std::process::exit(1); }
 
@@ -206,6 +206,7 @@ fn main()
             .file_name().unwrap_or_default()
             .to_str().unwrap_or_default()
             .to_string();
+        let dirname = path::Path::new(input.as_str()).parent().expect("Unable to retreive the dir from input!").to_str().unwrap_or_default();
         let to_rem = filename.find('.').unwrap_or(filename.len());
         filename = filename.drain(..to_rem).collect();
 
@@ -225,7 +226,7 @@ fn main()
             clear(false);
         }
 
-        build(input, &filename, ty, target, flag);
+        build(input.clone(), &filename, &dirname, ty, target, flag);
 
         if arg_set.contains("-r") {
             run(&filename);

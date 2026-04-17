@@ -18,7 +18,7 @@ impl Resolver {
         }
     }
 
-    pub fn process(&mut self, program: &Program)
+    pub fn process(&mut self, program: &Program, dirname: &str)
     {
         for item in program.items()
         {
@@ -27,7 +27,7 @@ impl Resolver {
                     for i in 0..spaces.len()
                     {
                         self.symbols.push(symbol::ScopeKind::Global);
-                        self.resolve_space(&spaces[i], "examples");
+                        self.resolve_space(&spaces[i], dirname);
                     }
                 },
                 Global::Fun(FunKind::Custom(f)) => {

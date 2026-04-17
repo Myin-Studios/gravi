@@ -206,7 +206,14 @@ fn main()
             .file_name().unwrap_or_default()
             .to_str().unwrap_or_default()
             .to_string();
-        let dirname = path::Path::new(input.as_str()).parent().expect("Unable to retreive the dir from input!").to_str().unwrap_or_default();
+        let dirname = {
+            let p = path::Path::new(input.as_str())
+                .parent()
+                .expect("Unable to retreive the dir from input!")
+                .to_str()
+                .unwrap_or_default();
+            if p.is_empty() { "." } else { p }
+        };
         let to_rem = filename.find('.').unwrap_or(filename.len());
         filename = filename.drain(..to_rem).collect();
 

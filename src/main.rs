@@ -19,14 +19,14 @@ use crate::symbol::SymbolTable;
 
 fn info()
 {
-    println!("\n{} - version: {}", "Nyon".purple().bold(), "alpha-0.1".white().bold());
+    println!("\n{} - version: {}", "Aion".purple().bold(), "alpha-0.1".white().bold());
     println!("Copyright © {} {}\n", "Myin Studios".bright_blue().bold(), "2026".white().bold());
-    println!("Type {} to open the {} section!", "-h".blue().bold(), "help".white().bold());
+    println!("Type {} to open the {} section!", "-h".bright_blue().bold(), "help".white().bold());
 }
 
 fn help()
 {
-    println!("\n| {} {} |", "WELCOME TO", "NYON".purple().bold());
+    println!("\n| {} {} |", "WELCOME TO", "AION".purple().bold());
     println!("{}", "-------------------".bright_black());
     println!("You are in the {} section!\n", "help".white().bold());
     println!("    {}", "Build and Run".white().bold());

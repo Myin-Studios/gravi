@@ -676,59 +676,29 @@ impl CGenerator {
                         Value::Loop(l) => {
                             if let Some(cond) = l.cond.clone()
                             {
-                                let start: String;
-                                let end: String;
-                                let is_inclusive: bool;
-
                                 if let Some(val) = cond.value()
                                 {
                                     match val {
                                         Value::Expression(expr) => {
                                             match expr {
                                                 Expr::Range(r) => {
-                                                    start = self.gen_expr(r.start());
-                                                    end = self.gen_expr(r.end());
-                                                    is_inclusive = r.inclusive();
+                                                    let start = self.gen_expr(r.start());
+                                                    let end   = self.gen_expr(r.end());
+                                                    let id    = self.register_var(cond.identifier(), cond.ty().to_owned(), false);
 
-                                                    let mut s: i32 = start.parse().unwrap_or(0);
-                                                    let mut e: i32 = end.parse().unwrap_or(0);
-                                                    
-                                                    if !is_inclusive
-                                                    {
-                                                        if s < e { e = e - 1; }
-                                                        else if e < s { s = s - 1; }
-                                                    }
+                                                    let (cond_asc, cond_desc) = if r.inclusive() {
+                                                        (format!("{} <= {}", id, end), format!("{} >= {}", id, end))
+                                                    } else {
+                                                        (format!("{} < {}",  id, end), format!("{} > {}",  id, end))
+                                                    };
 
-                                                    let id = self.register_var(cond.identifier(), cond.ty().to_owned(), false);
-
-                                                    // res.push_str(&format!("\tif ({} > {}) {{\n", start, end));
-                                                    // res.push_str(&format!("\t\tint tmp = {};\n", start));
-                                                    // res.push_str(&format!("\t\t{} = {};\n", start, end));
-                                                    // res.push_str(&format!("\t\t{} = tmp;\n", end));
-                                                    // res.push_str("\t}}\n");
-
-                                                    if s < e
-                                                    {
-                                                        res.push_str(&format!("\tfor (int {} = {}; {} <= {}; {}++)\n", id, s,
-                                                                                                                        id, e,
-                                                                                                                        id
-                                                                                                                        ));
-                                                        res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
-                                                    }
-                                                    else if s > e {
-                                                        res.push_str(&format!("\tfor (int {} = {}; {} >= {}; {}--)\n", id, s,
-                                                                                                                        id, e,
-                                                                                                                        id
-                                                                                                                        ));
-                                                        res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
-                                                    }
-                                                    else {
-                                                        res.push_str(&format!("\tfor (int {} = {}; {} <= {}; {}++)\n", id, start,
-                                                                                                                        id, end,
-                                                                                                                        id
-                                                                                                                        ));
-                                                        res.push_str(&format!("\t{{\n\t{}\n\t}}\n", self.gen_block(&l.body).0));
-                                                    }
+                                                    res.push_str(&format!(
+                                                        "\tfor (int {} = {}; ({} <= {}) ? ({}) : ({}); ({} <= {}) ? {}++ : {}--)\n\t{{\n{}\n\t}}\n",
+                                                        id, start,
+                                                        start, end, cond_asc, cond_desc,
+                                                        start, end, id, id,
+                                                        self.gen_block(&l.body).0
+                                                    ));
                                                 },
                                                 Expr::Boolean(_) => {
                                                     res.push_str(&format!("\twhile ({})\n\t{{\n\t{}\n\t}}", self.gen_expr(expr), self.gen_block(&l.body).0));

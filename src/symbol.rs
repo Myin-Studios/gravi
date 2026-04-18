@@ -14,6 +14,7 @@ pub struct FunctionSym {
     pub ret:    Type,
     pub public: bool,
     pub body:   Option<Vec<Items>>,
+    pub ext:    bool,
 }
 
 #[derive(Clone, Debug)]

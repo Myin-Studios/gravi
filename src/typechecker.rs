@@ -38,7 +38,7 @@ impl Checker {
         for item in prog.items.iter_mut()
         {
             match item {
-                Global::Fun(FunKind::Custom(fun)) => {
+                Global::Fun(FunKind::Custom(fun) | FunKind::Extern(fun)) => {
                     symbol.push(crate::symbol::ScopeKind::Function(fun.id.clone(), fun.ret.clone()));
                     self.check_fun(fun, symbol);
                     symbol.pop();

@@ -65,7 +65,7 @@ impl CGenerator {
                     for (id, sym) in scope.symbols
                     {
                         match sym {
-                            symbol::Symbol::Function(fun) => {
+                            symbol::Symbol::Function(fun) if !fun.ext => {
                                 if let Some(body) = fun.body.clone() {
                                     let params_start = self.name_map.len();
 
@@ -120,10 +120,43 @@ impl CGenerator {
                                     self.name_map.truncate(params_start);
                                 }
                             },
+                            symbol::Symbol::Function(fun) if fun.ext => {
+                                let params_start = self.name_map.len();
+
+                                for (_, (name, ty, _, _, list)) in fun.params.iter().enumerate() {
+                                    self.register_var(name, ty.clone(), list.clone());
+                                }
+
+                                self.fun_map.insert(id.clone().to_string(), fun.ret.clone());
+                                res.push_str(&format!("static inline {} nn_{}(", self.get_type(&fun.ret), id));
+                                for (i, (name, ty, mutable, _, list)) in fun.params.iter().enumerate() {
+                                    let n = self.get_set_mangled(name);
+                                    let mut t = self.get_type(&ty);
+                                    if list.clone() { t.push('*'); }
+
+                                    if !mutable { res.push_str("const "); }
+                                    res.push_str(&format!("{} {}", t, n));
+                                    if i < fun.params.len() - 1 { res.push_str(", "); }
+                                }
+                                res.push_str(")");
+                                
+                                res.push_str(&format!(" {{ return {}(", id));
+
+                                for (i, (name, _, _, _, list)) in fun.params.iter().enumerate() {
+                                    let n = self.get_set_mangled(name);
+
+                                    res.push_str(&format!("{}", n));
+                                    if i < fun.params.len() - 1 { res.push_str(", "); }
+                                }
+                                
+                                res.push_str("); };\n");
+                                
+                                self.name_map.truncate(params_start);
+                            },
                             symbol::Symbol::Variable(_) => {
                                 // error!
                             },
-                            // _ => {}
+                            _ => {}
                         }
                     }
                 }
@@ -164,6 +197,13 @@ impl CGenerator {
                         }
                     }
                 },
+                Global::Fun(FunKind::Extern(fun)) => {
+                    res.push_str(&format!("static inline {} nn_{}({}) {{ return {}({}); }}\n", self.get_type(fun.ret()),
+                                                                                                    fun.identifier(),
+                                                                                                    self.gen_params(fun.params()),
+                                                                                                    fun.identifier(),
+                                                                                                    self.gen_args_from_params(fun.params())));
+                }
                 Global::Import(_) => {},
                 _ => {}
             }
@@ -394,6 +434,20 @@ impl CGenerator {
             
             res.push_str(&format!("{}{} {}", mutable, ty, mangled));
             if i < params.len() - 1 { res.push_str(", "); }
+        }
+
+        res
+    }
+
+    fn gen_args_from_params(&mut self, args: &[VarDecl]) -> String
+    {
+        let mut res = String::new();
+
+        for (i, arg) in args.iter().enumerate()
+        {
+            res.push_str(&format!("{}", self.get_set_mangled(arg.identifier())));
+
+            if i < args.len() - 1 { res.push_str(", "); }
         }
 
         res
@@ -944,7 +998,7 @@ impl CGenerator {
             Value::Boolean(b) => {
                 if b == &BoolValue::True { "true".to_string() } else { "false".to_string() }
             },
-            Value::Call(_, _)  => String::new(),
+            Value::Call(id, vals) => format!("{}({})", id, self.gen_call(vals)),
             Value::IfElse(_)   => String::new(),
             Value::Null        => String::new(),
             Value::Loop(_)     => String::new(),
@@ -1009,7 +1063,7 @@ impl Backend for CGenerator {
                             mut_kw, c_ty, var.id));
                     }
                 },
-                // _ => {}
+                 _ => {}
             }
         }
 

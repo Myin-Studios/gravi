@@ -32,7 +32,7 @@ impl Resolver {
                     }
                 },
                 Global::Fun(FunKind::Custom(f)) => {
-                    self.symbols.add(f.identifier(), Self::fun_sym(f, false));
+                    self.symbols.add(f.identifier(), Self::fun_sym(f, false, false));
                 },
                 _ => {}
             }
@@ -52,7 +52,7 @@ impl Resolver {
         Some(p.output().items().to_vec())
     }
 
-    fn fun_sym(f: &Function, with_body: bool) -> symbol::Symbol
+    fn fun_sym(f: &Function, with_body: bool, ext: bool) -> symbol::Symbol
     {
         symbol::Symbol::Function(FunctionSym {
             params: f.params.iter()
@@ -61,6 +61,7 @@ impl Resolver {
             ret:    f.ret.clone(),
             public: f.public,
             body:   with_body.then(|| f.body.clone()),
+            ext
         })
     }
 
@@ -151,14 +152,17 @@ impl Resolver {
                     }
                 },
                 Global::Fun(FunKind::Custom(f)) | Global::Fun(FunKind::Entry(f)) => {
-                    self.resolve_fun(f, sub, origin);
+                    self.resolve_fun(f, sub, origin, false);
+                },
+                Global::Fun(FunKind::Extern(f)) => {
+                    self.resolve_fun(f, sub, origin, true);
                 },
                 _ => {}
             }
         }
     }
 
-    fn resolve_fun(&mut self, f: &Function, sub: &Option<Subspace>, origin: &str)
+    fn resolve_fun(&mut self, f: &Function, sub: &Option<Subspace>, origin: &str, ext: bool)
     {
         let should_import = match sub {
             None | Some(Subspace::All) => true,
@@ -173,7 +177,7 @@ impl Resolver {
             self.rep.add(GraviError::throw(crate::error::Kind::DuplicateImport(f.id.clone()))
                                     .file(origin));
         } else {
-            self.symbols.add(f.identifier(), Self::fun_sym(f, true));
+            self.symbols.add(f.identifier(), Self::fun_sym(f, true, ext));
         }
     }
     

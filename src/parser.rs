@@ -86,6 +86,16 @@ impl Parser {
 
                         if !spaces.is_empty() { self.prog.add(Global::Import(spaces)) }
                     },
+                    TokenKind::Keyword(Keyword::Ext) => {
+                        if matches!(tokens.last().map(|t| t.kind()), Some(TokenKind::Keyword(Keyword::Fun))) {
+                            tokens.pop();
+                            let fun = self.parse_function(tokens, public);
+                            if let Global::Fun(FunKind::Custom(f)) = fun {
+                                self.prog.add(Global::Fun(FunKind::Extern(f)));
+                            }
+                            public = false;
+                        }
+                    }
                     TokenKind::Keyword(Keyword::GPU) => par = Parallelism::GPU,
                     TokenKind::Keyword(Keyword::PAR) => par = Parallelism::CPU,
                     TokenKind::Keyword(Keyword::Mut) => mutable = true,
@@ -97,6 +107,7 @@ impl Parser {
                     TokenKind::Keyword(Keyword::Fun) => {
                         let fun = self.parse_function(tokens, public);
                         self.prog.add(fun);
+                        public = false;
                     },
                     _ => {}
                 }

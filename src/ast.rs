@@ -37,6 +37,7 @@ pub enum FunKind
 {
     Entry(Function),
     Custom(Function),
+    Extern(Function),
 }
 
 #[derive(Clone, Debug)]

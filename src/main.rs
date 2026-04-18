@@ -79,10 +79,10 @@ pub fn parse(tokens: &mut Vec<lexer::Token>) -> parser::Parser
     p
 }
 
-fn resolve(prog: &ast::Program, dirname: &str) -> resolver::Resolver
+fn resolve(prog: &ast::Program, filename: &str, dirname: &str) -> resolver::Resolver
 {
     let mut r = resolver::Resolver::new();
-    r.process(prog, &dirname);
+    r.process(prog, filename, &dirname);
     r
 }
 
@@ -126,7 +126,7 @@ fn build(input: String, filename: &str, dirname: &str, ty: BackendType, target: 
     p.reporter().fire_all();
     if p.reporter().has_errors() { std::process::exit(1); }
 
-    let mut r = resolve(p.output(), &dirname);
+    let mut r = resolve(p.output(), &filename, &dirname);
     r.reporter().fire_all();
     if r.reporter().has_errors() { std::process::exit(1); }
 

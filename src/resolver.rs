@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{ast::{FunKind, Global, Program, Space}, error::{GraviError, Reporter}, lex, parse, symbol::{self, FunctionSym, SymbolTable}};
+use crate::{ast::{FunKind, Function, Global, Program, Space, Subspace}, error::{GraviError, Reporter}, lex, parse, symbol::{self, FunctionSym, SymbolTable}};
 
 pub struct Resolver
 {
@@ -18,7 +18,7 @@ impl Resolver {
         }
     }
 
-    pub fn process(&mut self, program: &Program, dirname: &str)
+    pub fn process(&mut self, program: &Program, filename: &str, dirname: &str)
     {
         self.symbols.push(symbol::ScopeKind::Global);
         for item in program.items()
@@ -28,103 +28,152 @@ impl Resolver {
                     for i in 0..spaces.len()
                     {
                         self.symbols.push(symbol::ScopeKind::Global);
-                        self.resolve_space(&spaces[i], dirname);
+                        self.resolve_space(&spaces[i], filename, dirname);
                     }
                 },
                 Global::Fun(FunKind::Custom(f)) => {
-                    self.symbols.add(f.identifier(), symbol::Symbol::Function(FunctionSym {
-                                                                                    params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone(), p.list.clone())).collect(),
-                                                                                    ret:    f.ret.clone(),
-                                                                                    public: f.public,
-                                                                                    body:   None,
-                                                                                }));
+                    self.symbols.add(f.identifier(), Self::fun_sym(f, false));
                 },
                 _ => {}
             }
         }
     }
     
-    fn resolve_space(&mut self, space: &Space, path: &str)
+    fn parse_file(&mut self, path: &str) -> Option<Vec<Global>>
     {
-        let mut name = String::from(path);
-        name.push_str(&format!("/{}", space.name));
-        let mut file = name.clone();
-        file.push_str(".nn");
+        let mut l = lex(path);
+        l.reporter().fire_all();
+        if l.reporter().has_errors() { std::process::exit(1); }
 
-        let is_dir: bool = Path::new(name.as_str()).is_dir();
-        
-        if is_dir
+        let p = parse(l.tokens_mut());
+        p.reporter().fire_all();
+        if p.reporter().has_errors() { std::process::exit(1); }
+
+        Some(p.output().items().to_vec())
+    }
+
+    fn fun_sym(f: &Function, with_body: bool) -> symbol::Symbol
+    {
+        symbol::Symbol::Function(FunctionSym {
+            params: f.params.iter()
+                            .map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone(), p.list.clone()))
+                            .collect(),
+            ret:    f.ret.clone(),
+            public: f.public,
+            body:   with_body.then(|| f.body.clone()),
+        })
+    }
+
+    fn resolve_space(&mut self, space: &Space, filename: &str, dir: &str)
+    {
+        let module_dir  = format!("{}/{}", dir, space.name);
+        let module_file = format!("{}.nn", module_dir);
+
+        let is_dir      = Path::new(&module_dir).is_dir();
+        let file_exists = Path::new(&module_file).exists();
+
+        if is_dir && file_exists
         {
-            if let Some(sub) = space.sub.clone()
-            {
-                match sub
-                {
-                    crate::ast::Subspace::All => {},
-                    crate::ast::Subspace::Some(spaces) => {
-                        for s in spaces
-                        {
-                            self.resolve_space(&s, &name);
-                        }
-                    },
+            self.resolve_file(space, &module_file, &module_dir, filename);
+        }
+        else if is_dir
+        {
+            match &space.sub {
+                Some(Subspace::Some(subspaces)) => {
+                    for s in subspaces {
+                        self.resolve_space(s, filename, &module_dir);
+                    }
+                },
+                _ => {
+                    self.rep.add(GraviError::throw(crate::error::Kind::InvalidImport(space.name.clone()))
+                                                .file(filename));
                 }
             }
-            else {
-                // error! importing directory only is not supported!
-            }
         }
-        else if Path::new(&file).exists() {
-            if let Some(sub) = space.sub.clone()
-            {
-                let mut l = lex(&file);
-                l.reporter().fire_all();
-                if l.reporter().has_errors() { std::process::exit(1); }
+        else if file_exists
+        {
+            self.resolve_file(space, &module_file, &module_dir, filename);
+        }
+        else
+        {
+            self.rep.add(GraviError::throw(crate::error::Kind::InvalidImport(space.name.clone()))
+                                        .file(filename));
+        }
+    }
 
-                let p = parse(l.tokens_mut());                
-                p.reporter().fire_all();
-                if p.reporter().has_errors() { std::process::exit(1); }
+    fn resolve_file(&mut self, space: &Space, filename: &str, dirname: &str, origin: &str)
+    {
+        match &space.sub {
+            Some(Subspace::Some(wanted)) => {
+                let mut path_segs:  Vec<Space> = Vec::new();
+                let mut file_leaves: Vec<Space> = Vec::new();
+                let mut fn_names:   Vec<Space> = Vec::new();
 
-                for item in p.output().items()
-                {
-                    match item {
-                        Global::Import(spaces) => {
-                            for space in spaces
-                            {
-                                self.resolve_space(space, &name);
-                            }
-                        },
-                        Global::Fun(FunKind::Custom(f)) | Global::Fun(FunKind::Entry(f)) => {
-                            match sub.clone() {
-                                crate::ast::Subspace::All => {
-                                    if !f.public { self.rep.add(GraviError::throw(crate::error::Kind::PrivateImport(f.id.clone()))); }
-                                    self.symbols.add(f.identifier(), symbol::Symbol::Function(FunctionSym {
-                                                                                    params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone(), p.list.clone())).collect(),
-                                                                                    ret:    f.ret.clone(),
-                                                                                    public: f.public,
-                                                                                    body:   Some(f.body.clone()),
-                                                                                }));
-                                },
-                                crate::ast::Subspace::Some(spaces) => {
-                                    if spaces.iter().any(|s| s.name == f.id) {
-                                        if !f.public { self.rep.add(GraviError::throw(crate::error::Kind::PrivateImport(f.id.clone()))); }
-                                        
-                                        self.symbols.add(f.identifier(), symbol::Symbol::Function(FunctionSym {
-                                                                                    params: f.params.iter().map(|p| (p.id.clone(), p.ty.clone(), p.mutable(), p.par.clone(), p.list.clone())).collect(),
-                                                                                    ret:    f.ret.clone(),
-                                                                                    public: f.public,
-                                                                                    body:   Some(f.body.clone()),
-                                                                                }));
-                                    }
-                                },
-                            }
-                        },
-                        _ => {}
+                for s in wanted {
+                    if s.sub.is_some() {
+                        path_segs.push(s.clone());
+                    } else if Path::new(&format!("{}/{}.nn", dirname, s.name)).exists() {
+                        file_leaves.push(s.clone());
+                    } else {
+                        fn_names.push(s.clone());
                     }
                 }
-            }
-            else {
+
+                for seg in &path_segs {
+                    self.resolve_space(seg, filename, dirname);
+                }
+
+                for leaf in &file_leaves {
+                    let leaf_path = format!("{}/{}.nn", dirname, leaf.name);
+                    self.import_from_file(&leaf_path, dirname, &None, origin, false);
+                }
+
+                if !fn_names.is_empty() {
+                    let fn_sub = Some(Subspace::Some(fn_names));
+                    self.import_from_file(filename, dirname, &fn_sub, origin, true);
+                }
+            },
+            sub => {
+                self.import_from_file(filename, dirname, sub, origin, true);
             }
         }
-        else {
+    }
+
+    fn import_from_file(&mut self, filename: &str, dirname: &str, sub: &Option<Subspace>, origin: &str, resolve_inner: bool)
+    {
+        let Some(items) = self.parse_file(filename) else { return; };
+
+        for item in &items {
+            match item {
+                Global::Import(spaces) if resolve_inner => {
+                    for s in spaces {
+                        self.resolve_space(s, filename, dirname);
+                    }
+                },
+                Global::Fun(FunKind::Custom(f)) | Global::Fun(FunKind::Entry(f)) => {
+                    self.resolve_fun(f, sub, origin);
+                },
+                _ => {}
+            }
+        }
+    }
+
+    fn resolve_fun(&mut self, f: &Function, sub: &Option<Subspace>, origin: &str)
+    {
+        let should_import = match sub {
+            None | Some(Subspace::All) => true,
+            Some(Subspace::Some(wanted)) => wanted.iter().any(|s| s.name == f.id),
+        };
+
+        if !should_import { return; }
+
+        if !f.public {
+            self.rep.add(GraviError::throw(crate::error::Kind::PrivateImport(f.id.clone())));
+        } else if self.symbols.find(f.identifier()).is_some() {
+            self.rep.add(GraviError::throw(crate::error::Kind::DuplicateImport(f.id.clone()))
+                                    .file(origin));
+        } else {
+            self.symbols.add(f.identifier(), Self::fun_sym(f, true));
         }
     }
     

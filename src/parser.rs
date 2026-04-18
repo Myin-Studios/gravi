@@ -163,6 +163,11 @@ impl Parser {
                 match t.kind() {
                     TokenKind::Identifier(_) => {
                         spaces.push(self.parse_space(tokens));
+
+                        if let Some(next) = tokens.last() && matches!(next.kind(), TokenKind::Punctuation(Punctuation::Comma))
+                        {
+                            break;
+                        }
                     },
                     TokenKind::Punctuation(Punctuation::RangeInclusive) => {
                         spaces.push(self.parse_space(tokens));

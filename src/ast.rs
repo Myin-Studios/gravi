@@ -220,7 +220,10 @@ impl Unary {
 pub enum Expr
 {
     Literal(String),
+    CharLiteral(char),
+    StringLiteral(String),
     Identifier(String),
+    Call(String, Vec<Value>),
     Index(String, Box<Expr>),
     Range(Range),
     Binary(BinaryOp),

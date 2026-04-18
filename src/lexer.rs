@@ -124,13 +124,20 @@ pub enum Operator
 }
 
 #[derive(PartialEq, Debug, Clone)]
+pub enum ValueKind
+{
+    Numeric(String),
+    String(String),
+}
+
+#[derive(PartialEq, Debug, Clone)]
 pub enum TokenKind
 {
     Type(Type),
     Keyword(Keyword),
     Identifier(String),
     Punctuation(Punctuation),
-    Value(String),
+    Value(ValueKind),
     Char(char),
     Boolean(bool),
     Operator(Operator),
@@ -539,7 +546,7 @@ impl Lexer {
                     let s = self.read_string_literal();
 
                     self.tokens.push(Token::new(
-                        TokenKind::Value(s.clone()), &self.file, self.line, self.column - s.len()
+                        TokenKind::Value(ValueKind::String(s.clone())), &self.file, self.line, self.column - s.len()
                     ));
                 }
 
@@ -608,7 +615,7 @@ impl Lexer {
         if let Some(c) = word.chars().next()
         {
             if c.is_ascii_digit() {
-                self.tokens.push(Token::new(TokenKind::Value(word.clone()), &self.file, self.line, self.column - word.len()));
+                self.tokens.push(Token::new(TokenKind::Value(ValueKind::Numeric(word.clone())), &self.file, self.line, self.column - word.len()));
                 return true
             }
         }

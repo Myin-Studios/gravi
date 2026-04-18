@@ -60,6 +60,23 @@ impl CGenerator {
 
         for scope in symbols.scopes.clone()
         {
+            if let symbol::ScopeKind::Global = scope.kind {
+                for (id, sym) in &scope.symbols {
+                    if let symbol::Symbol::Function(fun) = sym {
+                        if !fun.ext {
+                            res.push_str(&format!("{} nn_{}({});\n",
+                                self.get_type(&fun.ret),
+                                id,
+                                self.gen_prototype_params(&fun.params)
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        for scope in symbols.scopes.clone()
+        {
             match scope.kind {
                 symbol::ScopeKind::Global => {
                     for (id, sym) in scope.symbols
@@ -142,7 +159,7 @@ impl CGenerator {
                                 
                                 res.push_str(&format!(" {{ return {}(", id));
 
-                                for (i, (name, _, _, _, list)) in fun.params.iter().enumerate() {
+                                for (i, (name, _, _, _, _)) in fun.params.iter().enumerate() {
                                     let n = self.get_set_mangled(name);
 
                                     res.push_str(&format!("{}", n));
@@ -419,6 +436,22 @@ impl CGenerator {
         res
     }
 
+    fn gen_prototype_params(&self, params: &[(String, Type, bool, Parallelism, bool)]) -> String
+    {
+        let mut res = String::new();
+
+        for (i, (_, ty, mutable, _, list)) in params.iter().enumerate()
+        {
+            let mut t = self.get_type(ty);
+            if *list { t.push('*'); }
+            let m = if *mutable { "" } else { "const " };
+            res.push_str(&format!("{}{}", m, t));
+            if i < params.len() - 1 { res.push_str(", "); }
+        }
+
+        res
+    }
+
     fn gen_params(&mut self, params: &[VarDecl]) -> String
     {
         let mut res = String::new();
@@ -463,6 +496,16 @@ impl CGenerator {
 
         let mutable = if var.mutable() { "" } else { "const " };
 
+        if var.value().is_none() {
+            let zero = match var.ty() {
+                Type::Numeric(_) => " = 0",
+                Type::Boolean    => " = false",
+                Type::Character  => " = '\\0'",
+                _                => "",
+            };
+            res.push_str(&format!("\t{}{} {}{};\n", mutable, ty, self.get_set_mangled(var.identifier()), zero));
+        }
+        
         if let Some(val) = var.value()
         {
             match val {
@@ -561,17 +604,16 @@ impl CGenerator {
                         }
                     }
 
-                    let s: usize = size.parse().unwrap_or(0);
-                    let n        = all.len();
                     let list_val = all.join(", ");
 
-                    let len = if s > n { s } else { n };
-
-                    res.push_str(&format!("\tint sz_{} = {};\n", var.identifier(), len));
+                    res.push_str(&format!("\tsize_t sz_{} = {};\n", var.identifier(), size));
                     if var.ty() == &Type::StringLiteral {
-                        res.push_str(&format!("\tchar {}[{}] = {{{}, '\\0'}};\n", var.identifier(), len + 1, list_val));
+                        res.push_str(&format!("\tchar* {} = (char*)malloc((sz_{} + 1) * sizeof(char));\n", var.identifier(), var.identifier()));
+                        res.push_str(&format!("\tmemset({}, ({}), sz_{});\n", var.identifier(), list_val, var.identifier()));
+                        res.push_str(&format!("\t{}[sz_{}] = '\\0';\n", var.identifier(), var.identifier()));
                     } else {
-                        res.push_str(&format!("\t{} {}[{}] = {{{}}};\n", ty, var.identifier(), len, list_val));
+                        res.push_str(&format!("\tchar* {} = (char*)malloc((sz_{}) * sizeof(char));\n", var.identifier(), var.identifier()));
+                        res.push_str(&format!("\tmemset({}, ({}), sz_{});\n", var.identifier(), list_val, var.identifier()));
                     }
                 },
                 Value::List(List::Use(id, vals, _)) => {
@@ -615,6 +657,8 @@ impl CGenerator {
                 let mangled = self.get_set_mangled(id);
                 res = format!("{}[{}]", mangled, self.gen_expr(idx));
             },
+            Expr::Call(id, vals) => res = format!("nn_{}({})", id, self.gen_call(vals)),
+            Expr::StringLiteral(val)   => res = format!("\"{}\"", val.to_string()),
             Expr::Literal(val)   => res = val.to_string(),
             Expr::Binary(b) => {
                 let op = match b.op() {
@@ -660,6 +704,7 @@ impl CGenerator {
                 let r = self.gen_expr(u.right());
                 res = format!("{}{}", op, r);
             },
+            Expr::CharLiteral(c) => res = format!("'{}'", c.to_string()),
             Expr::Range(_) => {} // just ignore this. it's handled separately
             _ => {
                 self.rep.add(GraviError::throw(crate::error::Kind::UnsupportedExpression)
@@ -1021,6 +1066,7 @@ impl Backend for CGenerator {
         self.out.push_str("#include <stdlib.h>\n");
         self.out.push_str("#include <math.h>\n");
         self.out.push_str("#include <stdbool.h>\n\n");
+        self.out.push_str("#include <string.h>\n\n");
 
         let preprocessed = self.preprocess(prog, symbols);
         self.out.push_str(&preprocessed);

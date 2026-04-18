@@ -352,7 +352,7 @@ impl Parser {
                         if let Some(next) = tokens.pop()
                         {
                             match next.kind() {
-                                TokenKind::Identifier(v) | TokenKind::Value(v) => {
+                                TokenKind::Identifier(v) | TokenKind::Value(ValueKind::String(v)) => {
                                     val = Value::StringLiteral(v.to_string());
                                     tokens.pop(); // consume closing quote
                                     break;
@@ -380,7 +380,7 @@ impl Parser {
                         val = Value::Char(*c);
                         break;
                     }
-                    TokenKind::Identifier(v) | TokenKind::Value(v) => {
+                    TokenKind::Identifier(v) | TokenKind::Value(ValueKind::String(v) | ValueKind::Numeric(v)) => {
                         let v = v.clone();
                         let temp = tokens.pop().unwrap();
 
@@ -624,7 +624,11 @@ impl Parser {
             match t.kind() {
                 TokenKind::Identifier(id) => {
                     let id = id.to_string();
-                    if tokens.last().map(|t| t.kind()) == Some(&TokenKind::Punctuation(Punctuation::LBracket)) {
+
+                    if tokens.last().map(|t| t.kind()) == Some(&TokenKind::Punctuation(Punctuation::LParen)) {
+                        let args = self.parse_args(tokens);
+                        Expr::Call(id, args)
+                    } else if tokens.last().map(|t| t.kind()) == Some(&TokenKind::Punctuation(Punctuation::LBracket)) {
                         tokens.pop();
                         let idx = self.parse_binary(tokens, 0);
                         if tokens.last().map(|t| t.kind()) == Some(&TokenKind::Punctuation(Punctuation::RBracket)) {
@@ -635,14 +639,19 @@ impl Parser {
                         Expr::Identifier(id)
                     }
                 },
-                TokenKind::Value(val)     => Expr::Literal(val.to_string()),
+                TokenKind::Value(ValueKind::String(val))     => Expr::StringLiteral(val.to_string()),
+                TokenKind::Value(ValueKind::Numeric(val))    => Expr::Literal(val.to_string()),
                 TokenKind::Punctuation(Punctuation::LParen) => {
                     let inner = self.parse_binary(tokens, 0);
 
                     if let Some(closing) = tokens.last() {
                         if closing.kind() == &TokenKind::Punctuation(Punctuation::RParen) {
                             tokens.pop();
+                        } else if closing.kind() == &TokenKind::Punctuation(Punctuation::SemiColon) {
+                            tokens.pop();
+                            return Expr::Grouped(Box::new(inner));
                         } else {
+                            println!("{:#?}", closing);
                             self.rep.add(GraviError::throw(crate::error::Kind::UnclosedParenthesis)
                                 .file(t.file())
                                 .at(t.line(), t.column())
@@ -681,6 +690,7 @@ impl Parser {
                         }
                     }
                 },
+                TokenKind::Char(c) => Expr::CharLiteral(*c),
                 _ => {
                     self.rep.add(GraviError::throw(crate::error::Kind::UnexpectedToken(t.clone()))
                                                 .file(t.file())
@@ -708,6 +718,8 @@ impl Parser {
             match t.kind() {
                 TokenKind::Identifier(_) | TokenKind::Value(_) => {
                     size = self.parse_binary(tokens, 0);
+
+                    println!("{:#?}", size);
                 },
                 _ => {
                     // error! unexpected token
@@ -733,7 +745,7 @@ impl Parser {
                         tokens.pop();
                         if !col.is_empty() { val.push(col.clone()); col.clear(); }
                     },
-                    TokenKind::Identifier(_) | TokenKind::Value(_) => {
+                    TokenKind::Identifier(_) | TokenKind::Value(_) | TokenKind::Punctuation(Punctuation::Quote) | TokenKind::Char(_) => {
                         col.push(self.parse_value(tokens));
                     }
                     _ => {
@@ -742,17 +754,6 @@ impl Parser {
                     }
                 }
             }
-        }
-
-        if val.is_empty() { return (size, None); } else {
-            let mut s: usize = match size {
-                Expr::Literal(sz) => sz.parse().unwrap_or(0),
-                _ => 0usize,
-            };
-
-            s = s * val.len();
-
-            size = Expr::Literal(s.to_string());
         }
 
         (size, Some(val))

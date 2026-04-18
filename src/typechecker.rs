@@ -222,7 +222,7 @@ impl Checker {
                     if let Some(vals) = values
                     {
                         let mut val: Vec<&mut Value> = vals.iter_mut().flatten().collect();
-                        let exp = self.check_val(val[0], expected, symbol);
+                        let exp: Type = self.check_val(val[0], expected, symbol);
 
                         for v in val
                         {
@@ -339,6 +339,30 @@ impl Checker {
 
                 ty = self.check_expr(&mut u.right, &exp, symbol);
             },
+            Expr::Call(id, vals) => {
+                let mut params = Vec::new();
+                for val in vals.into_iter()
+                {
+                    params.push(self.check_val(val, &Type::None, symbol));
+                }
+
+                self.check_call(vals, &params, symbol);
+                
+                if let Some(sym) = symbol.find(id)
+                {
+                    match sym {
+                        symbol::Symbol::Function(fun) => {
+                            ty = fun.ret.clone()
+                        }
+                        _ => {}
+                    }
+                }
+
+                if !self.is_compatible(&ty, &expected)
+                {
+                    self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(expected.clone(), ty.clone())));
+                }
+            }
             _ => {}
         }
 
@@ -429,6 +453,7 @@ impl Checker {
             (Type::Numeric(crate::lexer::Numeric::I8), Type::StringLiteral) => true,
             (Type::Character, Type::Numeric(crate::lexer::Numeric::I8)) => true,
             (Type::Numeric(crate::lexer::Numeric::I8), Type::Character) => true,
+            (Type::Character, Type::StringLiteral) | (Type::StringLiteral, Type::Character) => true,
             _ => false,
         }
     }

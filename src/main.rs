@@ -19,7 +19,7 @@ use crate::symbol::SymbolTable;
 
 fn info()
 {
-    println!("\n{} - version: {}", "Aion".purple().bold(), "alpha-0.1".white().bold());
+    println!("\n{} - version: {}", "Aion".purple().bold(), "0.2".white().bold());
     println!("Copyright © {} {}\n", "Myin Studios".bright_blue().bold(), "2026".white().bold());
     println!("Type {} to open the {} section!", "-h".bright_blue().bold(), "help".white().bold());
 }

@@ -20,7 +20,6 @@ pub enum Keyword
     Skip,
     Else,
     Type,
-    Class,
     Ext,
     Fun,
     Ret,
@@ -423,7 +422,7 @@ impl Lexer {
     fn what(&self, word: &str) -> Token
     {
         match word {
-            "with"   => Token::new(TokenKind::Keyword(Keyword::With),   &self.file, self.line, self.column - word.len()),
+            "with"   => Token::new(TokenKind::Keyword(Keyword::With), &self.file, self.line, self.column - word.len()),
             "pub"   => Token::new(TokenKind::Keyword(Keyword::Pub),   &self.file, self.line, self.column - word.len()),
             "var"   => Token::new(TokenKind::Keyword(Keyword::Var),   &self.file, self.line, self.column - word.len()),
             "mut"   => Token::new(TokenKind::Keyword(Keyword::Mut),   &self.file, self.line, self.column - word.len()),
@@ -436,7 +435,6 @@ impl Lexer {
             "!GPU"  => Token::new(TokenKind::Keyword(Keyword::GPU),   &self.file, self.line, self.column - word.len()),
             "!PAR"  => Token::new(TokenKind::Keyword(Keyword::PAR),   &self.file, self.line, self.column - word.len()),
             "fun"   => Token::new(TokenKind::Keyword(Keyword::Fun),   &self.file, self.line, self.column - word.len()),
-            "class" => Token::new(TokenKind::Keyword(Keyword::Class), &self.file, self.line, self.column - word.len()),
             "type"  => Token::new(TokenKind::Keyword(Keyword::Type),  &self.file, self.line, self.column - word.len()),
             "ext"   => Token::new(TokenKind::Keyword(Keyword::Ext),   &self.file, self.line, self.column - word.len()),
             "ret"   => Token::new(TokenKind::Keyword(Keyword::Ret),   &self.file, self.line, self.column - word.len()),

@@ -12,7 +12,7 @@ pub enum Global
     Import(Vec<Space>),
     Fun(FunKind),
     Var(VarDecl),
-    // Class,
+    Class(Class),
     // Inter,
 }
 
@@ -30,6 +30,22 @@ pub enum Subspace
 {
     All,
     Some(Vec<Space>),
+}
+
+#[derive(Clone, Debug)]
+pub struct Class
+{
+    pub public: bool,
+    pub name:   String,
+    pub imp:    Option<Vec<String>>,
+    pub body:   Vec<ClassBody>,
+}
+
+#[derive(Clone, Debug)]
+pub enum ClassBody
+{
+    Var(VarDecl),
+    Fun(FunKind),
 }
 
 #[derive(Clone, Debug)]

@@ -90,7 +90,7 @@ impl Parser {
                         if matches!(tokens.last().map(|t| t.kind()), Some(TokenKind::Keyword(Keyword::Fun))) {
                             tokens.pop();
                             let fun = self.parse_function(tokens, public);
-                            if let Global::Fun(FunKind::Custom(f)) = fun {
+                            if let FunKind::Custom(f) = fun {
                                 self.prog.add(Global::Fun(FunKind::Extern(f)));
                             }
                             public = false;
@@ -106,8 +106,13 @@ impl Parser {
                     },
                     TokenKind::Keyword(Keyword::Fun) => {
                         let fun = self.parse_function(tokens, public);
-                        self.prog.add(fun);
+                        self.prog.add(Global::Fun(fun));
                         public = false;
+                    },
+                    TokenKind::Keyword(Keyword::Type) => {
+                        let t = self.parse_type(public, tokens);
+                        public = false;
+                        self.prog.add(Global::Class(t));
                     },
                     _ => {}
                 }
@@ -219,6 +224,151 @@ impl Parser {
         Some(
             Subspace::Some(spaces)
         )
+    }
+
+    fn parse_type(&mut self, public: bool, tokens: &mut Vec<Token>) -> Class
+    {
+        let mut name = String::new();
+        let mut impls: Vec<String> = Vec::new();
+        let mut body: Vec<ClassBody> = Vec::new();
+
+        if let Some(t) = tokens.pop()
+        {
+            match t.kind() {
+                TokenKind::Identifier(id) => {
+                    name = id.to_owned();
+
+                    if let Some(next) = tokens.last()
+                    {
+                        if matches!(next.kind(), TokenKind::Punctuation(Punctuation::Colon))
+                        {
+                            tokens.pop();
+
+                            impls.extend(self.parse_impl(tokens));
+                        }
+                    }
+                },
+                _ => {
+                    self.rep.add(GraviError::throw(crate::error::Kind::UnexpectedToken(t.clone()))
+                                            .file(t.file())
+                                            .at(t.line(), t.column())
+                                            .hint("Write a name of a type here!"));
+                    tokens.push(t);
+                }
+            }
+        }
+        else {
+            self.rep.add(GraviError::throw(crate::error::Kind::UnexpectedEOF));
+        }
+
+        loop {
+            
+            if let Some(t) = tokens.last().cloned()
+            {
+                if matches!(t.kind(), TokenKind::Punctuation(Punctuation::LBrace)) {
+                    tokens.pop();
+                    body.extend(self.parse_type_body(tokens));
+                }
+                else if matches!(t.kind(), TokenKind::Punctuation(Punctuation::RBrace)) {
+                    tokens.pop();
+                    break;
+                }
+            } else {
+                self.rep.add(GraviError::throw(crate::error::Kind::UnexpectedEOF));
+            }
+        }
+
+        let imp = if !impls.is_empty() { Some(impls) } else { None };
+
+        Class
+        {
+            public,
+            name,
+            imp,
+            body
+        }   
+    }
+    
+    fn parse_impl(&mut self, tokens: &mut Vec<Token>) -> Vec<String>
+    {
+        let mut impls: Vec<String> = Vec::new();
+        let mut name = String::new();
+
+        loop {
+            if let Some(t) = tokens.pop()
+            {
+                match t.kind() {
+                    TokenKind::Identifier(id) => {
+                        name = id.to_owned();
+                    },
+                    TokenKind::Punctuation(Punctuation::Comma) => {
+                        impls.push(name.clone());
+                    },
+                    TokenKind::Punctuation(Punctuation::LBrace) => {
+                        impls.push(name);
+                        tokens.push(t);
+                        break;
+                    },
+                    _ => {
+                        self.rep.add(GraviError::throw(crate::error::Kind::UnexpectedToken(t.clone()))
+                                                    .file(t.file())
+                                                    .at(t.line(), t.column())
+                                                    .hint("Write a name of what this type extends or implements!"));
+                        tokens.push(t);
+                        break;
+                    }
+                }
+            }
+        }
+
+        impls
+    }
+
+    fn parse_type_body(&mut self, tokens: &mut Vec<Token>) -> Vec<ClassBody>
+    {
+        let mut body: Vec<ClassBody> = Vec::new();
+
+        let mut public = false;
+        let mut par = Parallelism::None;
+        let mut mutable = false;
+
+        loop {
+            if let Some(t) = tokens.pop()
+            {
+                match t.kind() {
+                    TokenKind::Keyword(Keyword::GPU) => par = Parallelism::GPU,
+                    TokenKind::Keyword(Keyword::PAR) => par = Parallelism::CPU,
+                    TokenKind::Keyword(Keyword::Pub) => public = true,
+                    TokenKind::Keyword(Keyword::Mut) => mutable = true,
+                    TokenKind::Keyword(Keyword::Var) => {
+                        body.push(ClassBody::Var(self.parse_var_decl(&par, mutable, tokens)));
+                        par = Parallelism::None;
+                        // public = false;
+                        mutable = false;
+                    },
+                    TokenKind::Keyword(Keyword::Fun) => {
+                        body.push(ClassBody::Fun(self.parse_function(tokens, public)));
+                        public = false;
+                    },
+                    TokenKind::Punctuation(Punctuation::RBrace) => {
+                        tokens.push(t);
+                        break;
+                    }
+                    _ => {
+                        self.rep.add(GraviError::throw(crate::error::Kind::UnexpectedToken(t.clone()))
+                                            .file(t.file())
+                                            .at(t.line(), t.column())
+                                            .hint("Write a valid statement in a type! Like a variable or method (function) declaration"));
+                        tokens.push(t);
+                        break;
+                    }
+                }
+            } else {
+                self.rep.add(GraviError::throw(crate::error::Kind::UnexpectedEOF));
+            }
+        }
+
+        body
     }
 
     fn parse_var_decl(&mut self, par: &Parallelism, mutable: bool, tokens: &mut Vec<Token>) -> VarDecl
@@ -756,7 +906,7 @@ impl Parser {
         (size, Some(val))
     }
 
-    fn parse_function(&mut self, tokens: &mut Vec<Token>, public: bool) -> Global
+    fn parse_function(&mut self, tokens: &mut Vec<Token>, public: bool) -> FunKind
     {
         let id = if let Some(t) = tokens.pop()
         {
@@ -807,9 +957,9 @@ impl Parser {
         }
 
         if main {
-            Global::Fun(FunKind::Entry(Function { public, lambda: false, id: "main".to_string(), params, ret, body }))
+            FunKind::Entry(Function { public, lambda: false, id: "main".to_string(), params, ret, body })
         } else {
-            Global::Fun(FunKind::Custom(Function { public, lambda: false, id, params, ret, body }))
+            FunKind::Custom(Function { public, lambda: false, id, params, ret, body })
         }
     }
 
@@ -1180,6 +1330,6 @@ impl Parser {
     }
 
     pub fn reporter(&self) -> &Reporter          { &self.rep }
-    pub fn output(&self)   -> &Program           { &self.prog }
+    pub fn output(&self)   -> &Program           { println!("{:#?}", self.prog); &self.prog }
     pub fn output_mut(&mut self) -> &mut Program { &mut self.prog }
 }

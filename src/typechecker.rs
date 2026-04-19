@@ -1,7 +1,7 @@
 use colored::Colorize;
 
 pub use crate::ast::*;
-use crate::{error::{GraviError, Reporter}, lexer::Type, symbol::{self, SymbolTable, VariableSym}};
+use crate::{error::{GraviError, Reporter}, lexer::{Operator, Type}, symbol::{self, SymbolTable, VariableSym}};
 
 /// Distinguishes how numeric bounds should be parsed in `in_range`.
 enum NumericKind { Unsigned, Signed, Float }
@@ -337,9 +337,12 @@ impl Checker {
             },
             Expr::Binary(b) => {
                 let l = self.check_val(&mut Value::Expression(b.left().clone()), expected, symbol);
-                let r = self.check_val(&mut Value::Expression(b.right().clone()), &l, symbol);
+                let mut r = self.check_val(&mut Value::Expression(b.right().clone()), &l, symbol);
 
-                if l != r && l != Type::None && r != Type::None {
+                if b.op == Operator::Sub { r = self.sign_converter(&r); }
+                else if b.op == Operator::Div { r = Type::Numeric(crate::lexer::Numeric::F32); }
+
+                if !self.is_compatible(&r, &l) && l != Type::None && r != Type::None {
                     self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(l.clone(), r.clone())));
                 }
                 ty = if l != Type::None { l } else { r };
@@ -359,12 +362,22 @@ impl Checker {
             Expr::Unary(u) => {
                 let mut exp = Type::None;
 
-                match u.op() {
-                    crate::lexer::Operator::LNot => { exp = Type::Boolean; }
-                    _ => {} // error?
-                }
+                if matches!(expected, Type::Numeric(crate::lexer::Numeric::USize |
+                                                    crate::lexer::Numeric::U8    |
+                                                    crate::lexer::Numeric::U16   |
+                                                    crate::lexer::Numeric::U32   |
+                                                    crate::lexer::Numeric::U64))
+                {
+                    exp = self.check_expr(&mut u.right, &Type::None, symbol);
+                    if u.op == Operator::Sub { ty = self.sign_converter(&exp); }
+                } else {
+                    match u.op() {
+                        crate::lexer::Operator::LNot => { exp = Type::Boolean; }
+                        _ => {} // error?
+                    }
 
-                ty = self.check_expr(&mut u.right, &exp, symbol);
+                    ty = self.check_expr(&mut u.right, &exp, symbol);
+                }
             },
             Expr::Call(id, vals) => {
                 let mut params = Vec::new();
@@ -395,6 +408,26 @@ impl Checker {
         }
 
         ty
+    }
+
+    fn sign_converter(&self, ty: &Type) -> Type
+    {
+        let t: Type;
+
+        match ty {
+            Type::Numeric(n) => {
+                match n {
+                    crate::lexer::Numeric::U8 => t = Type::Numeric(crate::lexer::Numeric::I8),
+                    crate::lexer::Numeric::U16 => t = Type::Numeric(crate::lexer::Numeric::I16),
+                    crate::lexer::Numeric::U32 => t = Type::Numeric(crate::lexer::Numeric::I32),
+                    crate::lexer::Numeric::U64 => t = Type::Numeric(crate::lexer::Numeric::I64),
+                    _ => { return ty.to_owned() }
+                }
+            }
+            _ => { return ty.to_owned() }
+        }
+
+        t
     }
 
     fn map_numeric(&self, val: &str, expected: &Type) -> Type

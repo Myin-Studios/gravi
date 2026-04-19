@@ -35,11 +35,12 @@ pub enum Kind
 
     TooManyEntry,
     TypeMismatch(Type, Type),
+    UninitializedVariable(String),
 
     EntryNotFound,
     UnsupportedExpression,
     UnsupportedReturnType,
-    InvalidParameter(usize)
+    InvalidParameter(usize),
 }
 
 #[derive(Clone, Debug)]
@@ -151,6 +152,7 @@ impl Kind {
 
             Kind::TooManyEntry => format!("W-Wait wait wait! I found too many {}", "entry points".bright_blue().bold()),
             Kind::TypeMismatch(expected, found) => format!("A-A-A... You mismatched the type! Expected {}, but found {}!", expected.to_string().green().bold(), found.to_string().red().bold()),
+            Kind::UninitializedVariable(name) => format!("Be careful! {} is not initialized!", name.bright_blue().bold()),
 
             Kind::EntryNotFound => "Hmm... Where are you?? My dear entry point!".to_string(),
             Kind::UnsupportedExpression => "Mh... Why would you like to do this? It's not allowed here!".to_string(),

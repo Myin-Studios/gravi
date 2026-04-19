@@ -651,7 +651,6 @@ impl Parser {
                             tokens.pop();
                             return Expr::Grouped(Box::new(inner));
                         } else {
-                            println!("{:#?}", closing);
                             self.rep.add(GraviError::throw(crate::error::Kind::UnclosedParenthesis)
                                 .file(t.file())
                                 .at(t.line(), t.column())
@@ -718,8 +717,6 @@ impl Parser {
             match t.kind() {
                 TokenKind::Identifier(_) | TokenKind::Value(_) => {
                     size = self.parse_binary(tokens, 0);
-
-                    println!("{:#?}", size);
                 },
                 _ => {
                     // error! unexpected token

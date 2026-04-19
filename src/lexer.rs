@@ -29,6 +29,10 @@ pub enum Keyword
 #[derive(PartialEq, Debug, Clone)]
 pub enum Numeric
 {
+    // Sizes
+    USize,
+    // Size,
+
     // Integers
     U8, U16, U32, U64,
     I8, I16, I32, I64,
@@ -40,6 +44,8 @@ pub enum Numeric
 impl fmt::Display for Numeric {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
+            Numeric::USize => "usize",
+            // Numeric::Size => "size",
             Numeric::U8  => "u8",
             Numeric::U16 => "u16",
             Numeric::U32 => "u32",
@@ -436,6 +442,7 @@ impl Lexer {
             "ret"   => Token::new(TokenKind::Keyword(Keyword::Ret),   &self.file, self.line, self.column - word.len()),
 
             // Types
+            "usize"  => Token::new(TokenKind::Type(Type::Numeric(Numeric::USize)),  &self.file, self.line, self.column - word.len()),
             "u8"     => Token::new(TokenKind::Type(Type::Numeric(Numeric::U8)),  &self.file, self.line, self.column - word.len()),
             "u16"    => Token::new(TokenKind::Type(Type::Numeric(Numeric::U16)), &self.file, self.line, self.column - word.len()),
             "u32"    => Token::new(TokenKind::Type(Type::Numeric(Numeric::U32)), &self.file, self.line, self.column - word.len()),

@@ -33,17 +33,18 @@ impl CGenerator {
         match ty {
             crate::lexer::Type::Numeric(numeric) => {
                 match numeric {
-                    crate::lexer::Numeric::U8  => "unsigned char".to_string(),
-                    crate::lexer::Numeric::U16 => "unsigned short".to_string(),
-                    crate::lexer::Numeric::U32 => "unsigned int".to_string(),
-                    crate::lexer::Numeric::U64 => "unsigned long".to_string(),
-                    crate::lexer::Numeric::I8  => "signed char".to_string(),
-                    crate::lexer::Numeric::I16 => "short".to_string(),
-                    crate::lexer::Numeric::I32 => "int".to_string(),
-                    crate::lexer::Numeric::I64 => "long".to_string(),
-                    crate::lexer::Numeric::F16 => "float".to_string(), // C has no native f16
-                    crate::lexer::Numeric::F32 => "float".to_string(),
-                    crate::lexer::Numeric::F64 => "double".to_string(),
+                    crate::lexer::Numeric::USize => "size_t".to_string(),
+                    crate::lexer::Numeric::U8    => "unsigned char".to_string(),
+                    crate::lexer::Numeric::U16   => "unsigned short".to_string(),
+                    crate::lexer::Numeric::U32   => "unsigned int".to_string(),
+                    crate::lexer::Numeric::U64   => "unsigned long".to_string(),
+                    crate::lexer::Numeric::I8    => "signed char".to_string(),
+                    crate::lexer::Numeric::I16   => "short".to_string(),
+                    crate::lexer::Numeric::I32   => "int".to_string(),
+                    crate::lexer::Numeric::I64   => "long".to_string(),
+                    crate::lexer::Numeric::F16   => "float".to_string(), // C has no native f16
+                    crate::lexer::Numeric::F32   => "float".to_string(),
+                    crate::lexer::Numeric::F64   => "double".to_string(),
                 }
             },
             crate::lexer::Type::StringLiteral => "char*".to_string(),
@@ -346,6 +347,7 @@ impl CGenerator {
     {
         match ty {
             Type::Numeric(n) => match n {
+                crate::lexer::Numeric::USize => "%zu",
                 crate::lexer::Numeric::F16 | crate::lexer::Numeric::F32 => "%g",
                 crate::lexer::Numeric::F64 => "%lg",
                 crate::lexer::Numeric::U8
@@ -498,10 +500,11 @@ impl CGenerator {
 
         if var.value().is_none() {
             let zero = match var.ty() {
-                Type::Numeric(_) => " = 0",
-                Type::Boolean    => " = false",
-                Type::Character  => " = '\\0'",
-                _                => "",
+                Type::Numeric(_)    => " = 0",
+                Type::Boolean       => " = false",
+                Type::Character     => " = '\\0'",
+                Type::StringLiteral => " = \"\\0\"",
+                _                   => "",
             };
             res.push_str(&format!("\t{}{} {}{};\n", mutable, ty, self.get_set_mangled(var.identifier()), zero));
         }
@@ -652,7 +655,9 @@ impl CGenerator {
         let mut res: String = String::new();
 
         match expr {
-            Expr::Identifier(id) => res = self.get_set_mangled(id),
+            Expr::Identifier(id) => {
+                res = self.get_set_mangled(id);
+            },
             Expr::Index(id, idx) => {
                 let mangled = self.get_set_mangled(id);
                 res = format!("{}[{}]", mangled, self.gen_expr(idx));

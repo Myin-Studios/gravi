@@ -26,7 +26,7 @@ impl Checker {
         for (name, ret, params, mut body) in imported {
             symbol.push(symbol::ScopeKind::Function(name.clone(), ret));
             for (pname, pty, pmut, ppar, list) in &params {
-                symbol.add(pname, symbol::Symbol::Variable(VariableSym { ty: pty.clone(), mutable: *pmut, par: ppar.clone(), list: list.clone() }));
+                symbol.add(pname, symbol::Symbol::Variable(VariableSym { ty: pty.clone(), mutable: *pmut, par: ppar.clone(), list: list.clone(), value: None }));
             }
             symbol.push(symbol::ScopeKind::Block);
             self.check_body(&mut body, symbol);
@@ -74,7 +74,8 @@ impl Checker {
                     mutable: param.mutable(),
                     ty:      param.ty().clone(),
                     par:     param.parallelism().clone(),
-                    list:    param.list()
+                    list:    param.list(),
+                    value:   param.value().clone(),
                 }
             ));
         }
@@ -123,7 +124,8 @@ impl Checker {
                                     mutable: v.mutable(),
                                     ty:      v.ty().clone(),
                                     par:     v.parallelism().clone(),
-                                    list:    v.list()
+                                    list:    v.list(),
+                                    value:   v.value().clone(),
                                 }
                             ));
                         },
@@ -137,6 +139,11 @@ impl Checker {
                             if let Some(mut var_sym) = existing {
                                 if let Some(val) = v.val.as_mut() {
                                     var_sym.ty = self.check_val(val, &Type::None, symbol);
+
+                                    if var_sym.value.is_none()
+                                    {
+                                        var_sym.value = Some(val.clone());
+                                    }
                                 }
 
                                 symbol.add(&name, symbol::Symbol::Variable(var_sym.clone()));
@@ -170,6 +177,7 @@ impl Checker {
                 Items::Expr(Value::IfElse(ifelse)) => {
                     ty = self.check_if(ifelse, symbol);
                 },
+                Items::Expr(val) => ty = self.check_val(val, &Type::None, symbol),
                 Items::Ret(val) => {
                     let expected = symbol.nearest_fun().cloned().unwrap_or(ty.clone());
                     ty = self.check_val(val, &expected, symbol);
@@ -216,7 +224,8 @@ impl Checker {
                 ty = self.check_if(ifelse, symbol);
             },
             Value::Loop(_) => {},
-            Value::List(List::Decl(_, values)) => {
+            Value::List(List::Decl(index, values)) => {
+                self.check_expr(index, &Type::Numeric(crate::lexer::Numeric::USize), symbol);
                 if expected == &Type::None
                 {
                     if let Some(vals) = values
@@ -264,7 +273,7 @@ impl Checker {
 
                 if ty == Type::StringLiteral && vals[0].len() == 1 && !matches!(vals[0][0], Value::Expression(Expr::Range(_)))
                 {
-                    ty = Type::Numeric(crate::lexer::Numeric::I8); // char
+                    ty = Type::Character;
                 }
 
                 if let Some(val) = assigned
@@ -274,6 +283,13 @@ impl Checker {
                     {
                         self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(found, ty.clone())));
                     }
+                }
+
+                let flat: Vec<&mut Value> = vals.iter_mut().flatten().collect();
+
+                for val in flat
+                {
+                    self.check_val(val, &Type::Numeric(crate::lexer::Numeric::USize), symbol);
                 }
             },
             Value::Char(_) => ty = Type::Character,
@@ -294,24 +310,35 @@ impl Checker {
                 {
                     match s {
                         symbol::Symbol::Variable(var) => {
+                            if var.value.is_none()
+                            {
+                                self.rep.add(GraviError::throw(crate::error::Kind::UninitializedVariable(id.clone())));
+                            }
+
                             ty = var.ty.clone()
                         },
                         _ => {}
                     }
                 }
+
+                if *expected != Type::None && !self.is_compatible(&ty, &expected)
+                {
+                    self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(expected.clone(), ty.clone())));
+                }
             },
             Expr::Literal(val) => {
                 ty = self.map_numeric(val, expected);
             },
+            Expr::Index(_, val) => {
+                ty = self.check_expr(val, &Type::Numeric(crate::lexer::Numeric::USize), symbol);
+            }
             Expr::Range(ran) => {
                 ty = self.check_range(ran, expected, symbol);
             },
             Expr::Binary(b) => {
                 let l = self.check_val(&mut Value::Expression(b.left().clone()), expected, symbol);
-                let r_expected = if *expected != Type::None { expected.clone() }
-                                else if l != Type::None    { l.clone() }
-                                else                       { Type::None };
-                let r = self.check_val(&mut Value::Expression(b.right().clone()), &r_expected, symbol);
+                let r = self.check_val(&mut Value::Expression(b.right().clone()), &l, symbol);
+
                 if l != r && l != Type::None && r != Type::None {
                     self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(l.clone(), r.clone())));
                 }
@@ -358,11 +385,12 @@ impl Checker {
                     }
                 }
 
-                if !self.is_compatible(&ty, &expected)
+                if *expected != Type::None && !self.is_compatible(&ty, &expected)
                 {
                     self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(expected.clone(), ty.clone())));
                 }
-            }
+            },
+            Expr::CharLiteral(_) => ty = Type::Character,
             _ => {}
         }
 
@@ -445,14 +473,13 @@ impl Checker {
             (Type::Numeric(f), Type::Numeric(e)) => {
                 use crate::lexer::Numeric::*;
                 matches!((f, e),
-                    (U8 | U16 | U32 | U64, U8 | U16 | U32 | U64) |
+                    (USize | U8 | U16 | U32 | U64, USize | U8 | U16 | U32 | U64) |
                     (I8 | I16 | I32 | I64, I8 | I16 | I32 | I64) |
                     (F16 | F32 | F64,      F16 | F32 | F64)
                 )
             },
-            (Type::Numeric(crate::lexer::Numeric::I8), Type::StringLiteral) => true,
-            (Type::Character, Type::Numeric(crate::lexer::Numeric::I8)) => true,
-            (Type::Numeric(crate::lexer::Numeric::I8), Type::Character) => true,
+            (Type::Character, Type::Numeric(crate::lexer::Numeric::U8)) => true,
+            (Type::Numeric(crate::lexer::Numeric::U8), Type::Character) => true,
             (Type::Character, Type::StringLiteral) | (Type::StringLiteral, Type::Character) => true,
             _ => false,
         }

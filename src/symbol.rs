@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{ast::{Items, Parallelism}, lexer::Type};
+use crate::{ast::{Items, Parallelism, Value}, lexer::Type};
 
 #[derive(Clone, Debug)]
 pub enum Symbol {
@@ -23,6 +23,7 @@ pub struct VariableSym {
     pub mutable: bool,
     pub par:     Parallelism,
     pub list:    bool,
+    pub value:   Option<Value>,
 }
 
 #[derive(Clone, Debug)]

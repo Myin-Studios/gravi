@@ -144,6 +144,8 @@ impl Checker {
                                     {
                                         var_sym.value = Some(val.clone());
                                     }
+                                    
+                                    if !var_sym.mutable { self.rep.add(GraviError::throw(crate::error::Kind::MutatingImmutable(v.name.clone()))); }
                                 }
 
                                 symbol.add(&name, symbol::Symbol::Variable(var_sym.clone()));

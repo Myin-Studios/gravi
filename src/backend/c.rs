@@ -4,6 +4,11 @@ use colored::Colorize;
 
 use crate::{ast::*, backend::Backend, error::{GraviError, Reporter}, lexer::{Operator, Type}, symbol::{self, SymbolTable}};
 
+enum ExpandedIndex {
+    Static(Vec<String>),
+    Dynamic { start: String, end: String, inclusive: bool, ascending: Option<bool>, },
+}
+
 pub struct CGenerator
 {
     out:           String,
@@ -372,59 +377,135 @@ impl CGenerator {
             .unwrap_or(false)
     }
 
-    fn expand_indices(&mut self, vals: &[&Value]) -> Vec<String> {
+    fn expand_indices(&mut self, vals: &[&Value]) -> Vec<ExpandedIndex> {
         let mut result = Vec::new();
         for v in vals {
             match v {
                 Value::Expression(Expr::Range(rng)) => {
-                    let s: usize = self.gen_expr(rng.start()).parse().unwrap_or(0);
-                    let e: usize = self.gen_expr(rng.end()).parse().unwrap_or(0);
-                    let iter: Box<dyn Iterator<Item = usize>> = match (s <= e, rng.inclusive()) {
-                        (true,  true)  => Box::new(s..=e),
-                        (true,  false) => Box::new(s..e),
-                        (false, true)  => Box::new((e..=s).rev()),
-                        (false, false) => Box::new((e..s).rev()),
-                    };
-                    for i in iter { result.push(i.to_string()); }
+                    let s_str = self.gen_expr(rng.start());
+                    let e_str = self.gen_expr(rng.end());
+                    match (s_str.parse::<usize>(), e_str.parse::<usize>()) {
+                        (Ok(s), Ok(e)) => {
+                            let iter: Box<dyn Iterator<Item = usize>> = match (s <= e, rng.inclusive()) {
+                                (true,  true)  => Box::new(s..=e),
+                                (true,  false) => Box::new(s..e),
+                                (false, true)  => Box::new((e..=s).rev()),
+                                (false, false) => Box::new((e..s).rev()),
+                            };
+                            result.push(ExpandedIndex::Static(iter.map(|i| i.to_string()).collect()));
+                        },
+                        _ => {
+                            let s_num = s_str.parse::<i64>().ok();
+                            let e_num = e_str.parse::<i64>().ok();
+                            let ascending = match (s_num, e_num) {
+                                (Some(s), Some(e)) => Some(s <= e),
+                                (Some(_), None)    => Some(true),
+                                (None,    Some(_)) => Some(false),
+                                (None,    None)    => None,
+                            };
+                            result.push(ExpandedIndex::Dynamic {
+                                start: s_str, end: e_str, inclusive: rng.inclusive(), ascending,
+                            });
+                        }
+                    }
                 },
-                _ => result.push(self.gen_val(v)),
+                _ => result.push(ExpandedIndex::Static(vec![self.gen_val(v)])),
             }
         }
         result
     }
 
+    fn gen_dynamic_range(&self, start: &str, end: &str, inclusive: bool, ascending: Option<bool>, body: &str) -> String {
+        match ascending {
+            Some(true) => {
+                let op = if inclusive { "<=" } else { "<" };
+                format!("\tfor (size_t _i = {}; _i {} {}; _i++) {{\n{}\t}}\n",
+                    start, op, end, body)
+            },
+            Some(false) => {
+                let op = if inclusive { ">=" } else { ">" };
+                format!("\tfor (ptrdiff_t _i = (ptrdiff_t)({}); _i {} (ptrdiff_t)({}); _i--) {{\n{}\t}}\n",
+                    start, op, end, body)
+            },
+            None => {
+                // entrambi identifier: check a runtime
+                let asc_op  = if inclusive { "<=" } else { "<" };
+                let desc_op = if inclusive { ">=" } else { ">" };
+                format!(
+                    "\tif ((ptrdiff_t)({s}) <= (ptrdiff_t)({e})) {{\n\
+                    \t\tfor (size_t _i = {s}; _i {aop} {e}; _i++) {{\n{body}\t\t}}\n\
+                    \t}} else {{\n\
+                    \t\tfor (ptrdiff_t _i = (ptrdiff_t)({s}); _i {dop} (ptrdiff_t)({e}); _i--) {{\n{body}\t\t}}\n\
+                    \t}}\n",
+                    s = start, e = end, aop = asc_op, dop = desc_op, body = body
+                )
+            }
+        }
+    }
+
     fn gen_list_use_assign(&mut self, id: &str, indices: &[&Value], rhs: &Value) -> String {
-        let dest   = self.get_set_mangled(id);
-        let lhs    = self.expand_indices(indices);
+        let dest = self.get_set_mangled(id);
+        let lhs  = self.expand_indices(indices);
         let mut res = String::new();
 
         match rhs {
             Value::List(List::Use(src_id, src_indices, None)) => {
-                // list[lhs...] = other[rhs...]
-                let src     = self.get_set_mangled(src_id);
+                let src      = self.get_set_mangled(src_id);
                 let src_flat: Vec<&Value> = src_indices.iter().flatten().collect();
-                let rhs     = self.expand_indices(&src_flat);
+                let rhs_exp  = self.expand_indices(&src_flat);
 
-                for (l, r) in lhs.iter().zip(rhs.iter()) {
-                    res.push_str(&format!("\t{}[{}] = {}[{}];\n", dest, l, src, r));
+                for (l, r) in lhs.iter().zip(rhs_exp.iter()) {
+                    match (l, r) {
+                        (ExpandedIndex::Static(li), ExpandedIndex::Static(ri)) => {
+                            for (li_idx, ri_idx) in li.iter().zip(ri.iter()) {
+                                res.push_str(&format!("\t{}[{}] = {}[{}];\n", dest, li_idx, src, ri_idx));
+                            }
+                        },
+                        (ExpandedIndex::Dynamic { start: ls, end: le, inclusive, ascending },
+                        ExpandedIndex::Dynamic { start: rs, .. }) => {
+                            let body = format!("\t\t{}[_i] = {}[_j++];\n", dest, src);
+                            let rs_clone = rs.clone();
+                            res.push_str(&format!("\tsize_t _j = {};\n", rs_clone));
+                            res.push_str(&self.gen_dynamic_range(ls, le, *inclusive, *ascending, &body));
+                        },
+                        _ => {}
+                    }
                 }
             },
             Value::Expression(Expr::Range(_)) => {
-                // list[start:end] (or list[start::end]) = start:end (or start::end)
-                let rhs = self.expand_indices(&[rhs]);
-                for (l, r) in lhs.iter().zip(rhs.iter()) {
-                    res.push_str(&format!("\t{}[{}] = {};\n", dest, l, r));
+                let rhs_exp = self.expand_indices(&[rhs]);
+                for (l, r) in lhs.iter().zip(rhs_exp.iter()) {
+                    match (l, r) {
+                        (ExpandedIndex::Static(li), ExpandedIndex::Static(ri)) => {
+                            for (li_idx, ri_val) in li.iter().zip(ri.iter()) {
+                                res.push_str(&format!("\t{}[{}] = {};\n", dest, li_idx, ri_val));
+                            }
+                        },
+                        (ExpandedIndex::Dynamic { start, end, inclusive, ascending }, _) => {
+                            let body = format!("\t\t{}[_i] = _i;\n", dest);
+                            res.push_str(&self.gen_dynamic_range(start, end, *inclusive, *ascending, &body));
+                        },
+                        _ => {}
+                    }
                 }
             },
             _ => {
-                // list[lhs...] = scalar/expr
                 let val = self.gen_val(rhs);
-                for i in &lhs {
-                    res.push_str(&format!("\t{}[{}] = {};\n", dest, i, val));
+                for exp in &lhs {
+                    match exp {
+                        ExpandedIndex::Static(indices) => {
+                            for i in indices {
+                                res.push_str(&format!("\t{}[{}] = {};\n", dest, i, val));
+                            }
+                        },
+                        ExpandedIndex::Dynamic { start, end, inclusive, ascending } => {
+                            let body = format!("\t\t{}[_i] = {};\n", dest, val);
+                            res.push_str(&self.gen_dynamic_range(start, end, *inclusive, *ascending, &body));
+                        }
+                    }
                 }
             }
         }
-
         res
     }
 
@@ -565,6 +646,48 @@ impl CGenerator {
                                 res.push_str("\t}\n");
                             }
                         },
+                        crate::ast::Expr::Index(src_id, idx) => {
+                            match idx.as_ref() {
+                                crate::ast::Expr::Range(rng) => {
+                                    let src      = self.get_set_mangled(src_id);
+                                    let s_str    = self.gen_expr(rng.start());
+                                    let e_str    = self.gen_expr(rng.end());
+                                    let op       = if rng.inclusive() { "<=" } else { "<" };
+                                    let len_expr = if rng.inclusive() {
+                                        format!("{} - {} + 1", e_str, s_str)
+                                    } else {
+                                        format!("{} - {}", e_str, s_str)
+                                    };
+
+                                    res.push_str(&format!("\tsize_t sz_{0} = {1};\n", var.identifier(), len_expr));
+
+                                    if var.ty() == &Type::StringLiteral {
+                                        res.push_str(&format!(
+                                            "\tchar* {0} = (char*)malloc((sz_{0} + 1) * sizeof(char));\n",
+                                            var.identifier()
+                                        ));
+                                        res.push_str(&format!(
+                                            "\tfor (size_t _i = {1}, _j = 0; _i {2} {3}; _i++, _j++) {{ {0}[_j] = {4}[_i]; }}\n",
+                                            var.identifier(), s_str, op, e_str, src
+                                        ));
+                                        res.push_str(&format!("\t{0}[sz_{0}] = '\\0';\n", var.identifier()));
+                                    } else {
+                                        res.push_str(&format!(
+                                            "\t{} {}[sz_{}];\n",
+                                            ty, var.identifier(), var.identifier()
+                                        ));
+                                        res.push_str(&format!(
+                                            "\tfor (size_t _i = {1}, _j = 0; _i {2} {3}; _i++, _j++) {{ {0}[_j] = {4}[_i]; }}\n",
+                                            var.identifier(), s_str, op, e_str, src
+                                        ));
+                                    }
+                                },
+                                _ => {
+                                    res.push_str(&format!("\t{}{} {} = {};\n",
+                                        mutable, ty, var.identifier(), self.gen_expr(e)));
+                                }
+                            }
+                        },
                         _ => {
                             res.push_str(&format!("\t{}{} {} = {};\n",
                                 mutable, ty, var.identifier(), self.gen_expr(e)));
@@ -599,9 +722,18 @@ impl CGenerator {
                             Value::List(List::Use(src_id, src_indices, None)) => {
                                 let src      = self.get_set_mangled(src_id);
                                 let src_flat: Vec<&Value> = src_indices.iter().flatten().collect();
-                                for idx in self.expand_indices(&src_flat) {
-                                    all.push(format!("{}[{}]", src, idx));
+                                for exp in self.expand_indices(&src_flat) {
+                                match exp {
+                                    ExpandedIndex::Static(indices) => {
+                                        for idx in &indices {
+                                            all.push(format!("{}[{}]", src, idx));
+                                        }
+                                    },
+                                    ExpandedIndex::Dynamic { start, .. } => {
+                                        all.push(format!("{}[{}]", src, start));
+                                    }
                                 }
+                            }
                             },
                             _ => all.push(self.gen_val(v)),
                         }
@@ -620,20 +752,81 @@ impl CGenerator {
                     }
                 },
                 Value::List(List::Use(id, vals, _)) => {
-                    let flat:    Vec<&Value> = vals.iter().flatten().collect();
+                    let flat     = vals.iter().flatten().collect::<Vec<_>>();
                     let src      = self.get_set_mangled(id);
                     let expanded = self.expand_indices(&flat);
-                    let n        = expanded.len();
-                    let list_val = expanded.iter()
-                        .map(|idx| format!("{}[{}]", src, idx))
-                        .collect::<Vec<_>>()
-                        .join(", ");
+                    let is_str   = var.ty() == &Type::StringLiteral;
+                    let has_dynamic = expanded.iter().any(|e| matches!(e, ExpandedIndex::Dynamic { .. }));
 
-                    res.push_str(&format!("\tint sz_{} = {};\n", var.identifier(), n));
-                    if var.ty() == &Type::StringLiteral {
-                        res.push_str(&format!("\tchar {}[{}] = {{{}, '\\0'}};\n", var.identifier(), n + 1, list_val));
+                    if has_dynamic {
+                        let var_id = var.identifier().to_string();
+
+                        // calcola la dimensione totale sommando i contributi di ogni segmento
+                        res.push_str(&format!("\tsize_t sz_{} = 0;\n", var_id));
+                        for exp in &expanded {
+                            match exp {
+                                ExpandedIndex::Static(indices) => {
+                                    res.push_str(&format!("\tsz_{} += {};\n", var_id, indices.len()));
+                                },
+                                ExpandedIndex::Dynamic { start, end, inclusive, ascending } => {
+                                    let inc = if *inclusive { " + 1" } else { "" };
+                                    let size_expr = match ascending {
+                                        Some(true)  => format!("({} - {}{})", end, start, inc),
+                                        Some(false) => format!("({} - {}{})", start, end, inc),
+                                        None        => format!(
+                                            "((ptrdiff_t)({e}) > (ptrdiff_t)({s}) ? (ptrdiff_t)({e}) - (ptrdiff_t)({s}) : (ptrdiff_t)({s}) - (ptrdiff_t)({e}){inc})",
+                                            s = start, e = end, inc = inc
+                                        ),
+                                    };
+                                    res.push_str(&format!("\tsz_{} += (size_t){};\n", var_id, size_expr));
+                                }
+                            }
+                        }
+
+                        // alloca
+                        if is_str {
+                            res.push_str(&format!("\tchar* {0} = (char*)malloc((sz_{0} + 1) * sizeof(char));\n", var_id));
+                        } else {
+                            res.push_str(&format!("\t{ty}* {id} = ({ty}*)malloc(sz_{id} * sizeof({ty}));\n",
+                                ty = ty, id = var_id));
+                        }
+
+                        // copia sequenziale con contatore _j
+                        res.push_str("\tsize_t _j = 0;\n");
+                        for exp in &expanded {
+                            match exp {
+                                ExpandedIndex::Static(indices) => {
+                                    for idx in indices {
+                                        res.push_str(&format!("\t{}[_j++] = {}[{}];\n", var_id, src, idx));
+                                    }
+                                },
+                                ExpandedIndex::Dynamic { start, end, inclusive, ascending } => {
+                                    let body = format!("\t\t{0}[_j++] = {1}[_i];\n", var_id, src);
+                                    res.push_str(&self.gen_dynamic_range(start, end, *inclusive, *ascending, &body));
+                                }
+                            }
+                        }
+
+                        if is_str {
+                            res.push_str(&format!("\t{0}[sz_{0}] = '\\0';\n", var_id));
+                        }
                     } else {
-                        res.push_str(&format!("\t{} {}[{}] = {{{}}};\n", ty, var.identifier(), n, list_val));
+                        // puro statico: usa array initializer
+                        let indices: Vec<String> = expanded.into_iter().flat_map(|e| {
+                            if let ExpandedIndex::Static(v) = e { v } else { vec![] }
+                        }).collect();
+                        let n        = indices.len();
+                        let list_val = indices.iter()
+                            .map(|idx| format!("{}[{}]", src, idx))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+
+                        res.push_str(&format!("\tint sz_{} = {};\n", var.identifier(), n));
+                        if is_str {
+                            res.push_str(&format!("\tchar {}[{}] = {{{}, '\\0'}};\n", var.identifier(), n + 1, list_val));
+                        } else {
+                            res.push_str(&format!("\t{} {}[{}] = {{{}}};\n", ty, var.identifier(), n, list_val));
+                        }
                     }
                 },
                 _ => {}
@@ -660,7 +853,15 @@ impl CGenerator {
             },
             Expr::Index(id, idx) => {
                 let mangled = self.get_set_mangled(id);
-                res = format!("{}[{}]", mangled, self.gen_expr(idx));
+                match idx.as_ref() {
+                    Expr::Range(rng) => {
+                        let start = self.gen_expr(rng.start());
+                        res = format!("&{}[{}]", mangled, start);
+                    },
+                    _ => {
+                        res = format!("{}[{}]", mangled, self.gen_expr(idx));
+                    }
+                }
             },
             Expr::Call(id, vals) => res = format!("nn_{}({})", id, self.gen_call(vals)),
             Expr::StringLiteral(val)   => res = format!("\"{}\"", val.to_string()),
@@ -893,12 +1094,17 @@ impl CGenerator {
                 let flat:    Vec<&Value> = vals.iter().flatten().collect();
                 let mangled  = self.get_set_mangled(id);
                 let expanded = self.expand_indices(&flat);
-                res.push_str(
-                    &expanded.iter()
-                        .map(|idx| format!("{}[{}]", mangled, idx))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
+
+                let parts: Vec<String> = expanded.into_iter().flat_map(|exp| match exp {
+                    ExpandedIndex::Static(indices) => {
+                        indices.iter().map(|idx| format!("{}[{}]", mangled, idx)).collect::<Vec<_>>()
+                    },
+                    ExpandedIndex::Dynamic { start, .. } => {
+                        vec![format!("&{}[{}]", mangled, start)]
+                    }
+                }).collect();
+
+                res.push_str(&parts.join(", "));
             },
             Value::Char(c) => res.push_str(&format!("'{}'", c)),
             _ => {}
@@ -955,7 +1161,21 @@ impl CGenerator {
                 Value::Block(_, _) => {},
                 Value::IfElse(_)   => {},
                 Value::Loop(_)     => {},
-                Value::List(_)     => {},
+                Value::List(List::Use(id, vals, None)) => {
+                    let flat:    Vec<&Value> = vals.iter().flatten().collect();
+                    let mangled  = self.get_set_mangled(id);
+                    let expanded = self.expand_indices(&flat);
+                    let parts: Vec<String> = expanded.into_iter().flat_map(|exp| match exp {
+                        ExpandedIndex::Static(indices) => {
+                            indices.iter().map(|idx| format!("{}[{}]", mangled, idx)).collect::<Vec<_>>()
+                        },
+                        ExpandedIndex::Dynamic { start, .. } => {
+                            vec![format!("&{}[{}]", mangled, start)]
+                        }
+                    }).collect();
+                    res.push_str(&parts.join(", "));
+                },
+                Value::List(_) => {},
                 Value::Char(c) => { res.push_str(&format!("'{}'", c)); },
             }
 
@@ -997,17 +1217,75 @@ impl CGenerator {
                     let var_ty   = self.type_of_var(id);
                     let elem_fmt = if var_ty == Type::StringLiteral { "%c" } else { Self::printf_fmt(&var_ty) };
                     let flat: Vec<&Value> = values.iter().flatten().collect();
+                    let expanded = self.expand_indices(&flat);
 
-                    for v in &flat {
-                        res.push_str(&format!("\tprintf(\"{}\\n\", {}[{}]);\n",
-                            elem_fmt, mangled, self.gen_val(v)));
+                    for exp in expanded {
+                        match exp {
+                            ExpandedIndex::Static(indices) => {
+                                for idx in &indices {
+                                    res.push_str(&format!("\tprintf(\"{}\\n\", {}[{}]);\n",
+                                        elem_fmt, mangled, idx));
+                                }
+                            },
+                            ExpandedIndex::Dynamic { start, end, inclusive, ascending } => {
+                                let body = format!("\t\tprintf(\"{}\\n\", {}[_i]);\n", elem_fmt, mangled);
+                                res.push_str(&self.gen_dynamic_range(&start, &end, inclusive, ascending, &body));
+                            }
+                        }
                     }
                 },
                 Value::Expression(Expr::Index(id, idx)) => {
                     let mangled  = self.get_set_mangled(id);
                     let ty       = self.type_of_var(id);
                     let elem_fmt = if ty == Type::StringLiteral { "%c" } else { Self::printf_fmt(&ty) };
-                    res.push_str(&format!("\tprintf(\"{}\\n\", {}[{}]);\n", elem_fmt, mangled, self.gen_expr(idx)));
+
+                    match idx.as_ref() {
+                        Expr::Range(rng) => {
+                            let s_str = self.gen_expr(rng.start());
+                            let e_str = self.gen_expr(rng.end());
+                            let op    = if rng.inclusive() { "<=" } else { "<" };
+
+                            match (s_str.parse::<usize>(), e_str.parse::<usize>()) {
+                                (Ok(s), Ok(e)) => {
+                                    let iter: Box<dyn Iterator<Item = usize>> = match (s <= e, rng.inclusive()) {
+                                        (true,  true)  => Box::new(s..=e),
+                                        (true,  false) => Box::new(s..e),
+                                        (false, true)  => Box::new((e..=s).rev()),
+                                        (false, false) => Box::new((e..s).rev()),
+                                    };
+                                    for i in iter {
+                                        if ty == Type::StringLiteral { res.push_str(&format!("\tprintf(\"{}\", {}[{}]);\n",
+                                            elem_fmt, mangled, i));
+                                            res.push_str("\tprintf(\"\\n\");\n");
+                                        } else {
+                                            res.push_str(&format!("\tprintf(\"{}\\n\", {}[{}]);\n", elem_fmt, mangled, i));
+                                        }
+                                        
+                                    }
+                                    
+                                },
+                                _ => {
+                                    if ty == Type::StringLiteral {
+                                        res.push_str(&format!(
+                                            "\tfor (size_t _i = {}; _i {} {}; _i++) {{\n\t\tprintf(\"{}\", {}[_i]);\n\t}}\n",
+                                            s_str, op, e_str, elem_fmt, mangled
+                                        ));
+                                        res.push_str("\tprintf(\"\\n\");\n");
+                                    } else {
+                                        res.push_str(&format!(
+                                            "\tfor (size_t _i = {}; _i {} {}; _i++) {{\n\t\tprintf(\"{}\\n\", {}[_i]);\n\t}}\n",
+                                            s_str, op, e_str, elem_fmt, mangled
+                                        ));
+                                    }
+                                }
+                            }
+                        },
+                        _ => {
+                            // indice singolo: comportamento originale
+                            res.push_str(&format!("\tprintf(\"{}\\n\", {}[{}]);\n",
+                                elem_fmt, mangled, self.gen_expr(idx)));
+                        }
+                    }
                 },
                 Value::Expression(Expr::Literal(lit)) => {
                     let fmt = if lit.contains('.') { "%g" } else { "%d" };

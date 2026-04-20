@@ -1,0 +1,14 @@
+fun main()
+{
+    var s: i32 = 0::9;
+    var i = 3;
+
+    if i > 5
+    {
+        show(s[0::3]);
+    }
+    else
+    {
+        show(s[0::i]);
+    }
+}

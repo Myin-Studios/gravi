@@ -547,9 +547,13 @@ impl Parser {
                                 let params: Vec<Value> = self.parse_args(tokens);
                                 return Value::Call(v, params);
                             }
-                            else if next.kind() == &TokenKind::Punctuation(Punctuation::LBracket) {
-                                tokens.push(temp);
-                                return Value::Expression(self.parse_binary(tokens, 0));
+                            else if next.kind() == &TokenKind::Punctuation(Punctuation::LBracket)
+                                && Self::has_multi_index(tokens)
+                            {
+                                // multi-index: s[0::i, i::0] → List::Use
+                                tokens.pop(); // consume [
+                                let (indices, assigned) = self.parse_list(tokens);
+                                return Value::List(List::Use(v.clone(), indices, assigned));
                             }
                             else {
                                 tokens.push(temp);
@@ -1296,6 +1300,31 @@ impl Parser {
         }
     }
 
+    /// Returns true when the next token is `[` and the bracketed content contains
+    /// a `,` at the top level (indicating a multi-index expression).
+    /// Called when `tokens.last()` is already `[`.
+    fn has_multi_index(tokens: &[Token]) -> bool
+    {
+        // tokens is a reversed stack: tokens[len-1] is the next token (`[`).
+        // We scan forward (decreasing index) past `[` looking for a top-level `,`
+        // before the matching `]`.
+        let len = tokens.len();
+        if len < 2 { return false; }
+        let mut depth = 0i32;
+        for i in (0..len - 1).rev() {
+            match tokens[i].kind() {
+                TokenKind::Punctuation(Punctuation::LBracket) => depth += 1,
+                TokenKind::Punctuation(Punctuation::RBracket) => {
+                    if depth == 0 { return false; } // closing `]` of our bracket — no comma found
+                    depth -= 1;
+                },
+                TokenKind::Punctuation(Punctuation::Comma) if depth == 0 => return true,
+                _ => {}
+            }
+        }
+        false
+    }
+
     fn parse_list(&mut self, tokens: &mut Vec<Token>) -> (Vec<Vec<Value>>, Option<Box<Value>>)
     {
         let mut indices = Vec::new();
@@ -1341,8 +1370,9 @@ impl Parser {
                 val = Some(Box::new(self.parse_value(tokens)));
             } else if matches!(t.kind(), TokenKind::Punctuation(Punctuation::SemiColon))
             {
-                tokens.pop();
                 self.stack.pop();
+            } else {
+                tokens.push(t);
             }
         }
 

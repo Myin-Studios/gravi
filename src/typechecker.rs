@@ -75,7 +75,7 @@ impl Checker {
                     ty:      param.ty().clone(),
                     par:     param.parallelism().clone(),
                     list:    param.list(),
-                    value:   param.value().clone(),
+                    value:   Some(crate::ast::Value::Null), // params are always "initialized" at call time
                 }
             ));
         }
@@ -357,8 +357,19 @@ impl Checker {
                     ty = self.map_numeric(val, expected);
                 }
             },
-            Expr::Index(_, val) => {
-                ty = self.check_expr(val, &Type::Numeric(crate::lexer::Numeric::USize), symbol);
+            Expr::Index(id, _) => {
+                let existing = symbol.find(id).and_then(|s| match s {
+                    symbol::Symbol::Variable(var) => Some(var.clone()),
+                    _ => None,
+                });
+                if let Some(sym) = existing
+                {
+                    if sym.ty != Type::None { ty = sym.ty; } else {
+                        self.rep.add(GraviError::throw(crate::error::Kind::UntypedVariable(id.to_owned())));
+                    }
+                } else {
+                    self.rep.add(GraviError::throw(crate::error::Kind::UndeclaredVariable(id.to_owned())));
+                }
             }
             Expr::Range(ran) => {
                 ty = self.check_range(ran, expected, symbol);

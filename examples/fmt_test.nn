@@ -1,0 +1,35 @@
+pub fun fmt(what: string, arg: string): string
+{
+    mut var res: string = [len_str(what) + len_str(arg) + 1](' ');
+    mut var out: u8 = 0;
+    mut var i: u8 = 0;
+
+    loop i < len_str(what)
+    {
+        if what[i] == '{'
+        {
+            mut var j: u8 = 0;
+            loop j < len_str(arg)
+            {
+                res[out] = arg[j];
+                out = out + 1;
+                j = j + 1;
+            }
+            i = i + 2;
+        }
+        else
+        {
+            res[out] = what[i];
+            out = out + 1;
+            i = i + 1;
+        }
+    }
+
+    ret res;
+}
+
+fun main()
+{
+    var result = fmt("Hello, {}!", "world");
+    show(result);
+}

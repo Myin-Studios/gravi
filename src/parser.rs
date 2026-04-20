@@ -550,7 +550,6 @@ impl Parser {
                             else if next.kind() == &TokenKind::Punctuation(Punctuation::LBracket)
                                 && Self::has_multi_index(tokens)
                             {
-                                // multi-index: s[0::i, i::0] → List::Use
                                 tokens.pop(); // consume [
                                 let (indices, assigned) = self.parse_list(tokens);
                                 return Value::List(List::Use(v.clone(), indices, assigned));
@@ -948,7 +947,7 @@ impl Parser {
         loop {
             match tokens.last().map(|t| t.kind().clone()) {
                 Some(TokenKind::Punctuation(Punctuation::LParen)) => {
-                    params = self.parse_params(tokens); // gestisce `(` internamente
+                    params = self.parse_params(tokens);
                 },
                 Some(TokenKind::Punctuation(Punctuation::Colon)) => {
                     tokens.pop();
@@ -1305,9 +1304,6 @@ impl Parser {
     /// Called when `tokens.last()` is already `[`.
     fn has_multi_index(tokens: &[Token]) -> bool
     {
-        // tokens is a reversed stack: tokens[len-1] is the next token (`[`).
-        // We scan forward (decreasing index) past `[` looking for a top-level `,`
-        // before the matching `]`.
         let len = tokens.len();
         if len < 2 { return false; }
         let mut depth = 0i32;
@@ -1315,7 +1311,7 @@ impl Parser {
             match tokens[i].kind() {
                 TokenKind::Punctuation(Punctuation::LBracket) => depth += 1,
                 TokenKind::Punctuation(Punctuation::RBracket) => {
-                    if depth == 0 { return false; } // closing `]` of our bracket — no comma found
+                    if depth == 0 { return false; } // closing `]` of our bracket: no comma found
                     depth -= 1;
                 },
                 TokenKind::Punctuation(Punctuation::Comma) if depth == 0 => return true,

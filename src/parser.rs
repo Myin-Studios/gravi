@@ -7,23 +7,7 @@ pub struct Parser
 {
     prog: Program,
     rep:  Reporter,
-}
-
-impl Program {
-    pub fn new() -> Self
-    {
-        Self { items: Vec::new() }
-    }
-
-    pub fn add(&mut self, item: Global)
-    {
-        self.items.push(item);
-    }
-
-    pub fn items(&self) -> &Vec<Global>
-    {
-        &self.items
-    }
+    stack: Vec<usize>,
 }
 
 impl Parser {
@@ -33,6 +17,7 @@ impl Parser {
         {
             prog: Program::new(),
             rep:  Reporter::new(),
+            stack: Vec::new(),
         }
     }
 
@@ -79,7 +64,10 @@ impl Parser {
                                     spaces.push(self.parse_space(tokens));
                                 }
                                 _ => {
-                                    // error! unexpected token
+                                    self.rep.add(GraviError::throw(crate::error::Kind::UnexpectedToken(t.clone()))
+                                                            .file(t.file())
+                                                            .at(t.line(), t.column())
+                                                            .hint("Write a valid import here: \"with path::to::{one, two}\""));
                                 }
                             }
                         }
@@ -101,6 +89,7 @@ impl Parser {
                     TokenKind::Keyword(Keyword::Mut) => mutable = true,
                     TokenKind::Keyword(Keyword::Pub) => public = true,
                     TokenKind::Keyword(Keyword::Var) => {
+                        self.stack.push(t.line());
                         let var = self.parse_var_decl(&par, mutable, tokens);
                         self.prog.add(Global::Var(var));
                     },
@@ -114,12 +103,21 @@ impl Parser {
                         public = false;
                         self.prog.add(Global::Class(t));
                     },
+                    TokenKind::Punctuation(Punctuation::SemiColon) => {
+                        self.stack.pop();
+                    }
                     _ => {}
                 }
             }
             else {
                 break;
             }
+        }
+
+        for s in &self.stack
+        {
+            self.rep.add(GraviError::throw(crate::error::Kind::UnterminatedStatement(s.to_owned()))
+                                    .hint(&format!("Just... Put a {} at the end.", ";".bright_blue().bold())));
         }
     }
 
@@ -228,7 +226,7 @@ impl Parser {
 
     fn parse_type(&mut self, public: bool, tokens: &mut Vec<Token>) -> Class
     {
-        let mut name = String::new();
+        let mut name: String = String::new();
         let mut impls: Vec<String> = Vec::new();
         let mut body: Vec<ClassBody> = Vec::new();
 
@@ -341,6 +339,7 @@ impl Parser {
                     TokenKind::Keyword(Keyword::Pub) => public = true,
                     TokenKind::Keyword(Keyword::Mut) => mutable = true,
                     TokenKind::Keyword(Keyword::Var) => {
+                        self.stack.push(t.line());
                         body.push(ClassBody::Var(self.parse_var_decl(&par, mutable, tokens)));
                         par = Parallelism::None;
                         // public = false;
@@ -353,7 +352,10 @@ impl Parser {
                     TokenKind::Punctuation(Punctuation::RBrace) => {
                         tokens.push(t);
                         break;
-                    }
+                    },
+                    TokenKind::Punctuation(Punctuation::SemiColon) => {
+                        self.stack.pop();
+                    },
                     _ => {
                         self.rep.add(GraviError::throw(crate::error::Kind::UnexpectedToken(t.clone()))
                                             .file(t.file())
@@ -422,6 +424,10 @@ impl Parser {
                                 tokens.push(t);
                                 break;
                             },
+                            Punctuation::SemiColon => {
+                                self.stack.pop();
+                                break;
+                            }
                             _ => break,
                         }
                     },
@@ -585,7 +591,11 @@ impl Parser {
                         val = Value::List(List::Decl(s, v));
                         break;
                     },
-                    TokenKind::Punctuation(Punctuation::SemiColon) => break,
+                    TokenKind::Punctuation(Punctuation::SemiColon) => {
+                        self.stack.pop();
+                        tokens.pop();
+                        break;
+                    },
                     _ => {
                         self.rep.add(GraviError::throw(crate::error::Kind::ExpectedValue)
                                                 .file(t.file())
@@ -891,6 +901,7 @@ impl Parser {
                     TokenKind::Punctuation(Punctuation::SemiColon) => {
                         tokens.pop();
                         if !col.is_empty() { val.push(col.clone()); col.clear(); }
+                        self.stack.pop();
                     },
                     TokenKind::Identifier(_) | TokenKind::Value(_) | TokenKind::Punctuation(Punctuation::Quote) | TokenKind::Char(_) => {
                         col.push(self.parse_value(tokens));
@@ -1027,6 +1038,7 @@ impl Parser {
                                 mutable = true;
                             },
                             Keyword::Var => {
+                                self.stack.push(t.line());
                                 stmts.push(Items::Var(Var::Decl(self.parse_var_decl(&par, mutable, tokens))));
                                 par     = Parallelism::None;
                                 mutable = false;
@@ -1038,6 +1050,7 @@ impl Parser {
                                             .hint(format!("Write a valid statement, like variable declarations, if-else statement, loop...\n\tYour nice function can't be declared inside a code block: \"{} ... {}\"!", "{".bright_blue().bold(), "}".bright_blue().bold()).as_str()));
                             },
                             Keyword::Ret if !top_level => {
+                                self.stack.push(t.line());
                                 stmts.push(Items::Ret(self.parse_value(tokens)));
                             },
                             Keyword::If => {
@@ -1064,12 +1077,15 @@ impl Parser {
                     },
                     TokenKind::Identifier(id) => {
                         let id = id.clone();
+                        self.stack.push(t.line());
+                        
                         if tokens.last().map(|n| n.kind()) == Some(&TokenKind::Punctuation(Punctuation::LParen)) {
                             let params = self.parse_args(tokens);
                             stmts.push(Items::Expr(Value::Call(id, params)));
                         } else if tokens.last().map(|n| n.kind()) == Some(&TokenKind::Punctuation(Punctuation::LBracket)) {
+                            tokens.pop();
                             let (indices, values) = self.parse_list(tokens);
-                            stmts.push(Items::Expr(Value::List(List::Use(id, indices, values))));
+                            stmts.push(Items::Expr(Value::List(List::Use(id.clone(), indices, values))));
                         } else {
                             tokens.push(t);
                             stmts.push(Items::Var(Var::Var(self.parse_var(tokens))));
@@ -1087,6 +1103,9 @@ impl Parser {
                     TokenKind::Punctuation(Punctuation::RBrace) if !top_level => {
                         tokens.push(t);
                         break;
+                    },
+                    TokenKind::Punctuation(Punctuation::SemiColon) => {
+                        self.stack.pop();
                     },
                     _ => {}
                 }
@@ -1283,8 +1302,6 @@ impl Parser {
         let mut v = Vec::new();
         let mut val = None;
         
-        tokens.pop(); // consume '['
-        
         loop {
             if let Some(t) = tokens.pop()
             {
@@ -1303,7 +1320,6 @@ impl Parser {
                             if !v.is_empty() { indices.push(v.clone()); }
                             break;
                         } else {
-                            // error! invalid token
                             self.rep.add(GraviError::throw(crate::error::Kind::UnexpectedToken(t)));
                             break;
                         }
@@ -1323,6 +1339,10 @@ impl Parser {
             if matches!(t.kind(), TokenKind::Punctuation(Punctuation::Assignment))
             {
                 val = Some(Box::new(self.parse_value(tokens)));
+            } else if matches!(t.kind(), TokenKind::Punctuation(Punctuation::SemiColon))
+            {
+                tokens.pop();
+                self.stack.pop();
             }
         }
 
@@ -1330,6 +1350,6 @@ impl Parser {
     }
 
     pub fn reporter(&self) -> &Reporter          { &self.rep }
-    pub fn output(&self)   -> &Program           { println!("{:#?}", self.prog); &self.prog }
+    pub fn output(&self)   -> &Program           { &self.prog }
     pub fn output_mut(&mut self) -> &mut Program { &mut self.prog }
 }

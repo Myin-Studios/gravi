@@ -6,6 +6,23 @@ pub struct Program
     pub items: Vec<Global>,
 }
 
+impl Program {
+    pub fn new() -> Self
+    {
+        Self { items: Vec::new() }
+    }
+
+    pub fn add(&mut self, item: Global)
+    {
+        self.items.push(item);
+    }
+
+    pub fn items(&self) -> &Vec<Global>
+    {
+        &self.items
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Global
 {

@@ -278,6 +278,26 @@ impl Checker {
                     ty = Type::Character;
                 }
 
+                for val in vals.iter_mut().flatten()
+                {
+                    match val {
+                        Value::Expression(Expr::Identifier(val_id)) => {
+                            let mut existing = symbol.find(val_id).and_then(|s| match s {
+                                symbol::Symbol::Variable(var) => Some(var.clone()),
+                                _ => None,
+                            });
+
+                            if let Some(var_sym) = existing.as_mut()
+                            {
+                                if var_sym.ty == Type::None || var_sym.ty == Type::Numeric(crate::lexer::Numeric::U8) { var_sym.ty = Type::Numeric(crate::lexer::Numeric::USize); }
+                            }
+                        },
+                        _ => {
+                            
+                        }
+                    }
+                }
+
                 if let Some(val) = assigned
                 {
                     let found = self.check_val(val, expected, symbol);
@@ -329,7 +349,13 @@ impl Checker {
                 }
             },
             Expr::Literal(val) => {
-                ty = self.map_numeric(val, expected);
+                if expected == &Type::Numeric(crate::lexer::Numeric::USize)
+                {
+                    ty = Type::Numeric(crate::lexer::Numeric::USize);
+                }
+                else {
+                    ty = self.map_numeric(val, expected);
+                }
             },
             Expr::Index(_, val) => {
                 ty = self.check_expr(val, &Type::Numeric(crate::lexer::Numeric::USize), symbol);

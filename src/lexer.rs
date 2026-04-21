@@ -23,6 +23,7 @@ pub enum Keyword
     Ext,
     Fun,
     Ret,
+    As,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -438,6 +439,7 @@ impl Lexer {
             "type"  => Token::new(TokenKind::Keyword(Keyword::Type),  &self.file, self.line, self.column - word.len()),
             "ext"   => Token::new(TokenKind::Keyword(Keyword::Ext),   &self.file, self.line, self.column - word.len()),
             "ret"   => Token::new(TokenKind::Keyword(Keyword::Ret),   &self.file, self.line, self.column - word.len()),
+            "as"    => Token::new(TokenKind::Keyword(Keyword::As),    &self.file, self.line, self.column - word.len()),
 
             // Types
             "usize"  => Token::new(TokenKind::Type(Type::Numeric(Numeric::USize)),  &self.file, self.line, self.column - word.len()),

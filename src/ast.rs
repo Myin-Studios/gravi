@@ -263,6 +263,7 @@ pub enum Expr
     Boolean(BinaryOp),
     Unary(Unary),
     Grouped(Box<Expr>),
+    Cast(Cast),
     Null
 }
 
@@ -291,6 +292,13 @@ impl Range {
     pub fn step(&self)      -> Option<&Expr> { self.step.as_deref() }
     pub fn end(&self)       -> &Expr         { &self.end }
     pub fn inclusive(&self) -> bool          { self.inclusive }
+}
+
+#[derive(Debug, Clone)]
+pub struct Cast
+{
+    pub what: Box<Expr>,
+    pub to:   Type,
 }
 
 #[derive(Clone, Debug)]

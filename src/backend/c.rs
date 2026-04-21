@@ -692,7 +692,7 @@ impl CGenerator {
                     }
                 },
                 Value::StringLiteral(s) => {
-                    res.push_str(&format!("\tconst char* {} = \"{}\";\n", var.identifier(), s));
+                    res.push_str(&format!("\tconst {}* {} = \"{}\";\n", ty, var.identifier(), s));
                 },
                 Value::Boolean(b) => {
                     let bv = if b == &BoolValue::True { "true" } else { "false" };
@@ -740,12 +740,19 @@ impl CGenerator {
 
                     res.push_str(&format!("\tsize_t sz_{} = {};\n", var.identifier(), size));
                     if var.ty() == &Type::StringLiteral {
-                        res.push_str(&format!("\tchar* {} = (char*)malloc((sz_{} + 1) * sizeof(char));\n", var.identifier(), var.identifier()));
-                        res.push_str(&format!("\tmemset({}, ({}), sz_{});\n", var.identifier(), list_val, var.identifier()));
-                        res.push_str(&format!("\t{}[sz_{}] = '\\0';\n", var.identifier(), var.identifier()));
+                        res.push_str(&format!("\t{}* {} = ({}[]){{{}}};\n", ty, var.identifier(), ty, list_val));
+
+                        // res.push_str(&format!("\t{}* {} = ({}*)malloc((sz_{} + 1) * sizeof({}));\n", ty, var.identifier(), ty, var.identifier(), ty));
+                        // res.push_str(&format!(
+                        //     "\tfor (size_t __i = 0; __i < sz_{}; __i++) {{ {}[__i] = {}; }}\n",
+                        //     var.identifier(), var.identifier(), list_val
+                        // ));
+                        // res.push_str(&format!("\t{}[sz_{}] = NULL;\n", var.identifier(), var.identifier()));
                     } else {
-                        res.push_str(&format!("\tchar* {} = (char*)malloc((sz_{}) * sizeof(char));\n", var.identifier(), var.identifier()));
-                        res.push_str(&format!("\tmemset({}, ({}), sz_{});\n", var.identifier(), list_val, var.identifier()));
+                        res.push_str(&format!("\t{} {}[] = {{{}}};\n", ty, var.identifier(), list_val));
+
+                        // res.push_str(&format!("\t{}* {} = ({}*)malloc((sz_{}) * sizeof({}));\n", ty, var.identifier(), ty, var.identifier(), ty));
+                        // res.push_str(&format!("\tmemset({}, ({}), sz_{});\n", var.identifier(), list_val, var.identifier()));
                     }
                 },
                 Value::List(List::Use(id, vals, _)) => {
@@ -909,6 +916,9 @@ impl CGenerator {
             },
             Expr::CharLiteral(c) => res = format!("'{}'", c.to_string()),
             Expr::Range(_) => {} // just ignore this. it's handled separately
+            Expr::Cast(c) => {
+                res = format!("({})({})", self.get_type(&c.to), self.gen_expr(&c.what));
+            },
             _ => {
                 self.rep.add(GraviError::throw(crate::error::Kind::UnsupportedExpression)
                     .hint("Try writing a valid expression, like:\n\t- a binary expression: \"val1 op val2\"\n\t- a grouped expression \"(val1 op val2)\"\n\t- a boolean expression: \"a || b\" or \"a && b\"\n\t- a range: \"start:step:end\" (exclusive) or \"start:step::end\" (inclusive)\n\t- an identifier: named variable\n\t- a numeric literal: 1, 2, ... n or 1.x, 2.x, ..., n.x"));
@@ -1195,7 +1205,10 @@ impl CGenerator {
 
                     if self.is_list_var(&mangled) {
                         if ty == Type::StringLiteral {
-                            res.push_str(&format!("\tprintf(\"%s\\n\", {});\n", mangled));
+                            res.push_str(&format!(
+                                "\tfor (int __i = 0; __i < sz_{}; __i++) {{\n\t\tprintf(\"%s\\n\", {}[__i]);\n\t}}\n",
+                                mangled, mangled
+                            ));
                         } else {
                             let fmt = Self::printf_fmt(&ty);
                             res.push_str(&format!(
@@ -1212,7 +1225,11 @@ impl CGenerator {
                 Value::List(List::Use(id, values, _)) => {
                     let mangled  = self.get_set_mangled(id);
                     let var_ty   = self.type_of_var(id);
-                    let elem_fmt = if var_ty == Type::StringLiteral { "%c" } else { Self::printf_fmt(&var_ty) };
+                    let elem_fmt = if var_ty == Type::StringLiteral {
+                        if self.is_list_var(&mangled) { "%s" } else { "%c" }
+                    } else {
+                        Self::printf_fmt(&var_ty)
+                    };
                     let flat: Vec<&Value> = values.iter().flatten().collect();
                     let expanded = self.expand_indices(&flat);
 
@@ -1234,7 +1251,11 @@ impl CGenerator {
                 Value::Expression(Expr::Index(id, idx)) => {
                     let mangled  = self.get_set_mangled(id);
                     let ty       = self.type_of_var(id);
-                    let elem_fmt = if ty == Type::StringLiteral { "%c" } else { Self::printf_fmt(&ty) };
+                    let elem_fmt = if ty == Type::StringLiteral {
+                        if self.is_list_var(&mangled) { "%s" } else { "%c" }
+                    } else {
+                        Self::printf_fmt(&ty)
+                    };
 
                     match idx.as_ref() {
                         Expr::Range(rng) => {
@@ -1278,7 +1299,6 @@ impl CGenerator {
                             }
                         },
                         _ => {
-                            // indice singolo: comportamento originale
                             res.push_str(&format!("\tprintf(\"{}\\n\", {}[{}]);\n",
                                 elem_fmt, mangled, self.gen_expr(idx)));
                         }

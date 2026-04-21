@@ -450,6 +450,19 @@ impl Checker {
                 }
             },
             Expr::CharLiteral(_) => ty = Type::Character,
+            Expr::Cast(c) => {
+                self.check_expr(&mut c.what, &c.to, symbol);
+
+                if expected == &Type::None
+                {
+                    ty = c.to.to_owned();
+                } else {
+                    if !self.is_compatible(&c.to, &expected)
+                    {
+                        self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(expected.clone(), c.to.clone())));
+                    }
+                }
+            },
             _ => {}
         }
 

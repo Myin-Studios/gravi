@@ -798,12 +798,80 @@ impl Parser {
                             tokens.pop();
                         }
                         Expr::Index(id, Box::new(idx))
+                    } else if tokens.last().map(|t| t.kind()) == Some(&TokenKind::Keyword(Keyword::As)) {
+                        tokens.pop();
+                        let mut to = Type::None;
+
+                        if let Some(t) = tokens.last().cloned()
+                        {
+                            match t.kind() {
+                                TokenKind::Type(ty) => {
+                                    tokens.pop();
+                                    to = ty.to_owned();
+                                },
+                                _ => {}
+                            }
+                        }
+
+                        Expr::Cast(Cast
+                        {
+                            what: Box::new(Expr::Identifier(id)),
+                            to
+                        })
                     } else {
                         Expr::Identifier(id)
                     }
                 },
-                TokenKind::Value(ValueKind::String(val))     => Expr::StringLiteral(val.to_string()),
-                TokenKind::Value(ValueKind::Numeric(val))    => Expr::Literal(val.to_string()),
+                TokenKind::Value(ValueKind::String(val))     => {
+                    if tokens.last().map(|t| t.kind()) == Some(&TokenKind::Keyword(Keyword::As)) {
+                        tokens.pop();
+                        let mut to = Type::None;
+
+                        if let Some(t) = tokens.last().cloned()
+                        {
+                            match t.kind() {
+                                TokenKind::Type(ty) => {
+                                    tokens.pop();
+                                    to = ty.to_owned();
+                                },
+                                _ => {}
+                            }
+                        }
+
+                        Expr::Cast(Cast
+                        {
+                            what: Box::new(Expr::StringLiteral(val.to_string())),
+                            to
+                        })
+                    } else {
+                        Expr::StringLiteral(val.to_string())
+                    }
+                },
+                TokenKind::Value(ValueKind::Numeric(val))    => {
+                    if tokens.last().map(|t| t.kind()) == Some(&TokenKind::Keyword(Keyword::As)) {
+                        tokens.pop();
+                        let mut to = Type::None;
+
+                        if let Some(t) = tokens.last().cloned()
+                        {
+                            match t.kind() {
+                                TokenKind::Type(ty) => {
+                                    tokens.pop();
+                                    to = ty.to_owned();
+                                },
+                                _ => {}
+                            }
+                        }
+
+                        Expr::Cast(Cast
+                        {
+                            what: Box::new(Expr::Literal(val.to_string())),
+                            to
+                        })
+                    } else {
+                        Expr::Literal(val.to_string())
+                    }
+                },
                 TokenKind::Punctuation(Punctuation::LParen) => {
                     let inner = self.parse_binary(tokens, 0);
 
@@ -826,7 +894,31 @@ impl Parser {
                             .hint(format!("Try writing {} to close the grouped expression.", ")".bright_blue().bold()).as_str()));
                     }
 
-                    Expr::Grouped(Box::new(inner))
+                    let grp = Expr::Grouped(Box::new(inner));
+
+                    if tokens.last().map(|t| t.kind()) == Some(&TokenKind::Keyword(Keyword::As)) {
+                        tokens.pop();
+                        let mut to = Type::None;
+
+                        if let Some(t) = tokens.last().cloned()
+                        {
+                            match t.kind() {
+                                TokenKind::Type(ty) => {
+                                    tokens.pop();
+                                    to = ty.to_owned();
+                                },
+                                _ => {}
+                            }
+                        }
+
+                        Expr::Cast(Cast
+                        {
+                            what: Box::new(grp),
+                            to
+                        })
+                    } else {
+                        grp
+                    }
                 },
                 TokenKind::Operator(o) => {
                     match o {
@@ -1377,5 +1469,5 @@ impl Parser {
 
     pub fn reporter(&self) -> &Reporter          { &self.rep }
     pub fn output(&self)   -> &Program           { &self.prog }
-    pub fn output_mut(&mut self) -> &mut Program { &mut self.prog }
+    pub fn output_mut(&mut self) -> &mut Program { println!("{:#?}", self.prog); &mut self.prog }
 }

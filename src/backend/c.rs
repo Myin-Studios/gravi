@@ -587,11 +587,8 @@ impl CGenerator {
                 Type::StringLiteral => " = \"\\0\"",
                 _                   => "",
             };
-            res.push_str(&format!("\t{}{} {}{};\n", mutable, ty, self.get_set_mangled(var.identifier()), zero));
-        }
-        
-        if let Some(val) = var.value()
-        {
+            res.push_str(&format!("\t{}{} {}{};\n", mutable, ty, var.identifier(), zero));
+        } else if let Some(val) = var.value() {
             match val {
                 Value::Expression(e) => {
                     match e {

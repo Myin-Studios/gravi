@@ -159,7 +159,7 @@ impl Kind {
             Kind::TypeMismatch(expected, found) => format!("A-A-A... You mismatched the type! Expected {}, but found {}!", expected.to_string().green().bold(), found.to_string().red().bold()),
             Kind::UndeclaredVariable(name) => format!("Hm... Where {} come from?!", name.bright_blue().bold()),
             Kind::UninitializedVariable(name) => format!("Be careful! {} is not initialized!", name.bright_blue().bold()),
-            Kind::UntypedVariable(name) => format!("Waaait! {}'s type is {}!", name.bright_black().bold(), "none".red().bold()),
+            Kind::UntypedVariable(name) => format!("Waaait! type of {} is {}!", name.bright_blue().bold(), "none".red().bold()),
             Kind::MutatingImmutable(name) => format!("No! Don't touch {}... It's not mutable!", name.bright_blue().bold()),
 
             Kind::EntryNotFound => "Hmm... Where are you?? My dear entry point!".to_string(),

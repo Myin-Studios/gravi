@@ -176,16 +176,16 @@ impl Checker {
                     self.check_body(b, symbol);
                     symbol.pop();
                 },
-                Items::Expr(Value::IfElse(ifelse)) => {
-                    ty = self.check_if(ifelse, symbol);
-                },
-                Items::Expr(val) => ty = self.check_val(val, &Type::None, symbol),
+                Items::Expr(Value::IfElse(ifelse)) => return self.check_if(ifelse, symbol),
+                Items::Expr(val) => return self.check_val(val, &Type::None, symbol),
                 Items::Ret(val) => {
                     let expected = symbol.nearest_fun().cloned().unwrap_or(ty.clone());
-                    ty = self.check_val(val, &expected, symbol);
+                    return self.check_val(val, &expected, symbol);
                 }
                 _ => {}
             }
+
+            ty = Type::None;
         }
 
         ty
@@ -337,10 +337,14 @@ impl Checker {
                                 self.rep.add(GraviError::throw(crate::error::Kind::UninitializedVariable(id.clone())));
                             }
 
-                            ty = var.ty.clone()
+                            if var.ty != Type::None { ty = var.ty.clone(); } else {
+                                self.rep.add(GraviError::throw(crate::error::Kind::UntypedVariable(id.to_owned())));
+                            }
                         },
                         _ => {}
                     }
+                } else {
+                    self.rep.add(GraviError::throw(crate::error::Kind::UndeclaredVariable(id.to_owned())));
                 }
 
                 if *expected != Type::None && !self.is_compatible(&ty, &expected)
@@ -357,15 +361,18 @@ impl Checker {
                     ty = self.map_numeric(val, expected);
                 }
             },
-            Expr::Index(id, _) => {
-                let existing = symbol.find(id).and_then(|s| match s {
-                    symbol::Symbol::Variable(var) => Some(var.clone()),
-                    _ => None,
-                });
-                if let Some(sym) = existing
+            Expr::Index(id, idx) => {
+                ty = self.check_expr(idx, expected, symbol);
+
+                if let Some(sym) = symbol.find(id)
                 {
-                    if sym.ty != Type::None { ty = sym.ty; } else {
-                        self.rep.add(GraviError::throw(crate::error::Kind::UntypedVariable(id.to_owned())));
+                    match sym {
+                        symbol::Symbol::Variable(var) => {
+                            if var.ty != Type::None { ty = var.ty.clone(); } else {
+                                self.rep.add(GraviError::throw(crate::error::Kind::UntypedVariable(id.to_owned())));
+                            }
+                        },
+                        _ => {}
                     }
                 } else {
                     self.rep.add(GraviError::throw(crate::error::Kind::UndeclaredVariable(id.to_owned())));

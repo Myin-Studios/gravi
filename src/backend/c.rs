@@ -692,7 +692,7 @@ impl CGenerator {
                     }
                 },
                 Value::StringLiteral(s) => {
-                    res.push_str(&format!("\tconst {}* {} = \"{}\";\n", ty, var.identifier(), s));
+                    res.push_str(&format!("\tconst {} {} = \"{}\";\n", ty, var.identifier(), s));
                 },
                 Value::Boolean(b) => {
                     let bv = if b == &BoolValue::True { "true" } else { "false" };
@@ -741,18 +741,23 @@ impl CGenerator {
                     res.push_str(&format!("\tsize_t sz_{} = {};\n", var.identifier(), size));
                     if var.ty() == &Type::StringLiteral {
                         res.push_str(&format!("\t{}* {} = ({}[]){{{}}};\n", ty, var.identifier(), ty, list_val));
-
-                        // res.push_str(&format!("\t{}* {} = ({}*)malloc((sz_{} + 1) * sizeof({}));\n", ty, var.identifier(), ty, var.identifier(), ty));
-                        // res.push_str(&format!(
-                        //     "\tfor (size_t __i = 0; __i < sz_{}; __i++) {{ {}[__i] = {}; }}\n",
-                        //     var.identifier(), var.identifier(), list_val
-                        // ));
-                        // res.push_str(&format!("\t{}[sz_{}] = NULL;\n", var.identifier(), var.identifier()));
                     } else {
-                        res.push_str(&format!("\t{} {}[] = {{{}}};\n", ty, var.identifier(), list_val));
 
-                        // res.push_str(&format!("\t{}* {} = ({}*)malloc((sz_{}) * sizeof({}));\n", ty, var.identifier(), ty, var.identifier(), ty));
-                        // res.push_str(&format!("\tmemset({}, ({}), sz_{});\n", var.identifier(), list_val, var.identifier()));
+                        if var.ty() == &Type::Character
+                        {
+                            res.push_str(&format!("\t{}* {} = ({}*)malloc((sz_{} + 1) * sizeof({}));\n", ty, var.identifier(), ty, var.identifier(), ty));
+                            if flat.len() == 1 {
+                                res.push_str(&format!("\tmemset({}, {}, sz_{});\n", var.identifier(), list_val, var.identifier()));
+                            } else {
+                                for (i, v) in all.iter().enumerate() {
+                                    res.push_str(&format!("\t{}[{}] = {};\n", var.identifier(), i, v));
+                                }
+                            }
+                            res.push_str(&format!("\t{}[sz_{}] = '\\0';\n", var.identifier(), var.identifier()));
+                        }
+                        else {
+                            res.push_str(&format!("\t{}* {} = ({}[]){{{}}};\n", ty, var.identifier(), ty, list_val));
+                        }
                     }
                 },
                 Value::List(List::Use(id, vals, _)) => {

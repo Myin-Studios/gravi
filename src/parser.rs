@@ -545,7 +545,32 @@ impl Parser {
                             if next.kind() == &TokenKind::Punctuation(Punctuation::LParen)
                             {
                                 let params: Vec<Value> = self.parse_args(tokens);
-                                return Value::Call(v, params);
+
+                                if tokens.last().map(|t| t.kind()) == Some(&TokenKind::Keyword(Keyword::As)) {
+                                    tokens.pop();
+                                    let mut to = Type::None;
+
+                                    if let Some(t) = tokens.last().cloned()
+                                    {
+                                        match t.kind() {
+                                            TokenKind::Type(ty) => {
+                                                tokens.pop();
+                                                to = ty.to_owned();
+                                            },
+                                            _ => {}
+                                        }
+                                    }
+
+                                    return Value::Expression(Expr::Cast(Cast
+                                    {
+                                        what: Box::new(Value::Call(v, params)),
+                                        to
+                                    }));
+                                } else {
+                                    return Value::Call(v, params);
+                                }
+
+                                
                             }
                             else if next.kind() == &TokenKind::Punctuation(Punctuation::LBracket)
                                 && Self::has_multi_index(tokens)
@@ -815,7 +840,7 @@ impl Parser {
 
                         Expr::Cast(Cast
                         {
-                            what: Box::new(Expr::Identifier(id)),
+                            what: Box::new(Value::Expression(Expr::Identifier(id))),
                             to
                         })
                     } else {
@@ -840,7 +865,7 @@ impl Parser {
 
                         Expr::Cast(Cast
                         {
-                            what: Box::new(Expr::StringLiteral(val.to_string())),
+                            what: Box::new(Value::Expression(Expr::StringLiteral(val.to_string()))),
                             to
                         })
                     } else {
@@ -865,7 +890,7 @@ impl Parser {
 
                         Expr::Cast(Cast
                         {
-                            what: Box::new(Expr::Literal(val.to_string())),
+                            what: Box::new(Value::Expression(Expr::Literal(val.to_string()))),
                             to
                         })
                     } else {
@@ -913,7 +938,7 @@ impl Parser {
 
                         Expr::Cast(Cast
                         {
-                            what: Box::new(grp),
+                            what: Box::new(Value::Expression(grp)),
                             to
                         })
                     } else {
@@ -1469,5 +1494,5 @@ impl Parser {
 
     pub fn reporter(&self) -> &Reporter          { &self.rep }
     pub fn output(&self)   -> &Program           { &self.prog }
-    pub fn output_mut(&mut self) -> &mut Program { println!("{:#?}", self.prog); &mut self.prog }
+    pub fn output_mut(&mut self) -> &mut Program { &mut self.prog }
 }

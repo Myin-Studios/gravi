@@ -27,7 +27,6 @@ impl Resolver {
                 Global::Import(spaces) => {
                     for i in 0..spaces.len()
                     {
-                        self.symbols.push(symbol::ScopeKind::Global);
                         self.resolve_space(&spaces[i], filename, dirname);
                     }
                 },

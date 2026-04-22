@@ -297,7 +297,7 @@ impl Range {
 #[derive(Debug, Clone)]
 pub struct Cast
 {
-    pub what: Box<Expr>,
+    pub what: Box<Value>,
     pub to:   Type,
 }
 

@@ -922,7 +922,7 @@ impl CGenerator {
             Expr::CharLiteral(c) => res = format!("'{}'", c.to_string()),
             Expr::Range(_) => {} // just ignore this. it's handled separately
             Expr::Cast(c) => {
-                res = format!("({})({})", self.get_type(&c.to), self.gen_expr(&c.what));
+                res = format!("({})({})", self.get_type(&c.to), self.gen_val(&c.what));
             },
             _ => {
                 self.rep.add(GraviError::throw(crate::error::Kind::UnsupportedExpression)

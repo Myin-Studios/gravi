@@ -26,7 +26,7 @@ impl Checker {
         for (name, ret, params, mut body) in imported {
             symbol.push(symbol::ScopeKind::Function(name.clone(), ret));
             for (pname, pty, pmut, ppar, list) in &params {
-                symbol.add(pname, symbol::Symbol::Variable(VariableSym { ty: pty.clone(), mutable: *pmut, par: ppar.clone(), list: list.clone(), value: None }));
+                symbol.add(pname, symbol::Symbol::Variable(VariableSym { ty: pty.clone(), mutable: *pmut, par: ppar.clone(), list: list.clone(), value: Some(Value::Null) }));
             }
             symbol.push(symbol::ScopeKind::Block);
             self.check_body(&mut body, symbol);
@@ -451,12 +451,14 @@ impl Checker {
             },
             Expr::CharLiteral(_) => ty = Type::Character,
             Expr::Cast(c) => {
-                self.check_expr(&mut c.what, &c.to, symbol);
+                self.check_val(&mut c.what, &c.to, symbol);
 
                 if expected == &Type::None
                 {
                     ty = c.to.to_owned();
                 } else {
+                    ty = c.to.to_owned();
+                    
                     if !self.is_compatible(&c.to, &expected)
                     {
                         self.rep.add(GraviError::throw(crate::error::Kind::TypeMismatch(expected.clone(), c.to.clone())));

@@ -1137,11 +1137,6 @@ impl Parser {
         let mut stmts: Vec<Items>    = Vec::new();
 
         loop {
-            if tokens.is_empty()
-            {
-                break;
-            }
-
             if let Some(t) = tokens.pop()
             {
                 match t.kind() {

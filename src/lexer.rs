@@ -538,9 +538,15 @@ impl Lexer {
                     word.push(c);
                 }
             },
-            '+' | '-' | '*' | '/' | '%' | '^' | ';' | ',' | '(' | ')' | '[' | ']' | '{' | '}' => {
+            '+' | '-' | '*' | '/' | '%' | '^' | ',' | '(' | ')' | '[' | ']' | '{' | '}' => {
                 word.push(self.advance());
             },
+            ';' => {
+                self.advance();
+                self.tokens.push(Token::new(
+                    TokenKind::Punctuation(Punctuation::SemiColon), &self.file, self.line, self.column - 1
+                ));
+            }
             '"' => {
                 self.advance();
 
@@ -577,15 +583,50 @@ impl Lexer {
             '\'' => {
                 self.advance();
 
-                if self.next() != '\''
+                if self.next() == '\\'
+                {
+                    self.advance();
+                    let c;
+
+                    if self.next() == '0'
+                    {
+                        self.advance();
+                        c = '\0';
+                        self.tokens.push(Token::new(TokenKind::Char(c), &self.file, self.line, self.column - 2));
+                    } else if self.next() == 'n'
+                    {
+                        self.advance();
+                        c = '\n';
+                        self.tokens.push(Token::new(TokenKind::Char(c), &self.file, self.line, self.column - 2));
+                    } else if self.next() == 'r'
+                    {
+                        self.advance();
+                        c = '\r';
+                        self.tokens.push(Token::new(TokenKind::Char(c), &self.file, self.line, self.column - 2));
+                    } else if self.next() == 't'
+                    {
+                        self.advance();
+                        c = '\t';
+                        self.tokens.push(Token::new(TokenKind::Char(c), &self.file, self.line, self.column - 2));
+                    }
+                    else {
+                        // error! unexpected special character
+                    }
+
+                    if self.advance() != '\''
+                    {
+                        // error! expected end of char
+                    }
+                }
+                else if self.next() != '\''
                 {
                     let c = self.advance();
                     self.tokens.push(Token::new(TokenKind::Char(c), &self.file, self.line, self.column - 1));
-                }
 
-                if self.advance() != '\''
-                {
-                    // error! unclosed character
+                    if self.advance() != '\''
+                    {
+                        // error! expected end of char
+                    }
                 }
             },
             '|' => {

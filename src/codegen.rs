@@ -1,4 +1,4 @@
-use crate::backend::c::CGenerator;
+use crate::backend::{c::CGenerator, llvm::LLVMGenerator};
 
 pub enum BackendType
 {
@@ -21,7 +21,8 @@ pub enum BuildFlag
     RemoveCode
 }
 
-pub enum Generators
+pub enum Generators<'a>
 {
-    C(CGenerator)
+    C(CGenerator),
+    LLVM(LLVMGenerator<'a>)
 }

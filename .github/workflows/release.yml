@@ -139,6 +139,52 @@ jobs:
       - name: Install dependencies
         run: |
           ${{ matrix.packages_install }}
+            - name: Install LLVM (Linux/macOS)
+        if: runner.os != 'Windows'
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "18"
+
+      - name: Enable static linking (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: echo "LLVM_SYS_180_STATIC=1" >> $GITHUB_ENV
+
+      - name: Cache LLVM static build (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        id: llvm-cache
+        with:
+          path: C:\llvm-static
+          key: llvm-18-static-windows-x64-v1
+
+      - name: Build LLVM statically (Windows, solo prima volta)
+        if: runner.os == 'Windows' && steps.llvm-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $ver = "18.1.8"
+          Invoke-WebRequest `
+            "https://github.com/llvm/llvm-project/archive/llvmorg-$ver.tar.gz" `
+            -OutFile llvm.tar.gz
+          tar -xf llvm.tar.gz
+          cmake `
+            -S "llvm-project-llvmorg-$ver/llvm" -B llvm-build `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_SHARED_LIBS=OFF `
+            -DLLVM_BUILD_LLVM_DYLIB=OFF `
+            -DLLVM_INCLUDE_TESTS=OFF `
+            -DLLVM_INCLUDE_EXAMPLES=OFF `
+            -DLLVM_INCLUDE_BENCHMARKS=OFF `
+            -DLLVM_TARGETS_TO_BUILD="X86;AArch64" `
+            -DCMAKE_INSTALL_PREFIX="C:\llvm-static"
+          cmake --build llvm-build --config Release --target install -- /m
+
+      - name: Set LLVM static prefix (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "LLVM_SYS_180_PREFIX=C:/llvm-static" >> $GITHUB_ENV
+          echo "LLVM_SYS_180_STATIC=1" >> $GITHUB_ENV
       - name: Build artifacts
         run: |
           # Actually do builds and make zips and whatnot

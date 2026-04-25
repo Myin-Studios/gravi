@@ -1,6 +1,6 @@
 [package]
 name = "gravi"
-version = "0.1.10"
+version = "0.2.0"
 edition = "2024"
 description = "The Aion programming language compiler"
 authors = ["Myin-Studios"]
@@ -15,6 +15,7 @@ eula = false
 
 [dependencies]
 colored = "3.1.1"
+inkwell = { version = "0.8", features = ["llvm21-1"] }
 
 # The profile that 'dist' will build with
 [profile.dist]

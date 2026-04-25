@@ -33,6 +33,69 @@ impl CGenerator {
         }
     }
 
+    pub fn process(&mut self, prog: &Program, symbols: &SymbolTable) {
+        self.out.push_str("#include <stdio.h>\n");
+        self.out.push_str("#include <stdlib.h>\n");
+        self.out.push_str("#include <math.h>\n");
+        self.out.push_str("#include <stdbool.h>\n\n");
+        self.out.push_str("#include <string.h>\n\n");
+
+        let preprocessed = self.preprocess(prog, symbols);
+        self.out.push_str(&preprocessed);
+
+        let mut is_main = false;
+
+        for item in prog.items() {
+            if let Global::Var(var) = item {
+                self.name_map.push((
+                    var.id.clone(),
+                    var.id.clone(),
+                    var.ty().clone(),
+                    false,
+                ));
+            }
+        }
+
+        for item in prog.items()
+        {
+            match item {
+                Global::Fun(FunKind::Custom(fun)) => {
+                    let s = self.gen_fun(fun);
+                    self.out.push_str(&s);
+                },
+                Global::Fun(FunKind::Entry(fun)) => {
+                    is_main = true;
+                    let bd = self.gen_block(fun.body()).0;
+                    self.out.push_str(&format!("int main()\n{{\n{}\n\treturn 0;\n}}", bd));
+                },
+                Global::Import(_) => {},
+                Global::Var(var) => {
+                    let c_ty = self.get_type(var.ty());
+                    let mut_kw = if var.mutable() { "" } else { "const " };
+                    if let Some(val) = var.value() {
+                        let v = self.gen_val(val);
+                        self.out.push_str(&format!("{}{} {} = {};\n",
+                            mut_kw, c_ty, var.id, v));
+                    } else {
+                        self.out.push_str(&format!("{}{} {};\n",
+                            mut_kw, c_ty, var.id));
+                    }
+                },
+                 _ => {}
+            }
+        }
+
+        if !is_main
+        {
+            self.rep.add(GraviError::throw(crate::error::Kind::EntryNotFound)
+                                    .severity(crate::error::Severity::Warning)
+                                    .hint(&format!("Write one and only one function {}. Not 0, not 2, not N, just 1!\n\tFor now I'll generate it for you... but be careful next time!", "main".bright_blue().bold())));
+            self.out.push_str("int main()\n{\n");
+            self.out.push_str("\treturn 0;\n");
+            self.out.push_str("}\n");
+        }
+    }
+
     fn get_type(&self, ty: &Type) -> String
     {
         match ty {
@@ -1366,69 +1429,6 @@ impl CGenerator {
 }
 
 impl Backend for CGenerator {
-    fn process(&mut self, prog: &Program, symbols: &SymbolTable) {
-        self.out.push_str("#include <stdio.h>\n");
-        self.out.push_str("#include <stdlib.h>\n");
-        self.out.push_str("#include <math.h>\n");
-        self.out.push_str("#include <stdbool.h>\n\n");
-        self.out.push_str("#include <string.h>\n\n");
-
-        let preprocessed = self.preprocess(prog, symbols);
-        self.out.push_str(&preprocessed);
-
-        let mut is_main = false;
-
-        for item in prog.items() {
-            if let Global::Var(var) = item {
-                self.name_map.push((
-                    var.id.clone(),
-                    var.id.clone(),
-                    var.ty().clone(),
-                    false,
-                ));
-            }
-        }
-
-        for item in prog.items()
-        {
-            match item {
-                Global::Fun(FunKind::Custom(fun)) => {
-                    let s = self.gen_fun(fun);
-                    self.out.push_str(&s);
-                },
-                Global::Fun(FunKind::Entry(fun)) => {
-                    is_main = true;
-                    let bd = self.gen_block(fun.body()).0;
-                    self.out.push_str(&format!("int main()\n{{\n{}\n\treturn 0;\n}}", bd));
-                },
-                Global::Import(_) => {},
-                Global::Var(var) => {
-                    let c_ty = self.get_type(var.ty());
-                    let mut_kw = if var.mutable() { "" } else { "const " };
-                    if let Some(val) = var.value() {
-                        let v = self.gen_val(val);
-                        self.out.push_str(&format!("{}{} {} = {};\n",
-                            mut_kw, c_ty, var.id, v));
-                    } else {
-                        self.out.push_str(&format!("{}{} {};\n",
-                            mut_kw, c_ty, var.id));
-                    }
-                },
-                 _ => {}
-            }
-        }
-
-        if !is_main
-        {
-            self.rep.add(GraviError::throw(crate::error::Kind::EntryNotFound)
-                                    .severity(crate::error::Severity::Warning)
-                                    .hint(&format!("Write one and only one function {}. Not 0, not 2, not N, just 1!\n\tFor now I'll generate it for you... but be careful next time!", "main".bright_blue().bold())));
-            self.out.push_str("int main()\n{\n");
-            self.out.push_str("\treturn 0;\n");
-            self.out.push_str("}\n");
-        }
-    }
-
     fn output(&self) -> &String
     {
         &self.out

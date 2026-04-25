@@ -47,9 +47,9 @@ fn help()
 
     print!("\n");
     println!("    {}", "Back-end".white().bold());
-    println!("    Those commands are used to choose the back-end to use to generate and compile the code (GCC by default).\n");
+    println!("    Those commands are used to choose the back-end to use to generate and compile the code (LLVM by default).\n");
     println!("\t{}: It generates {} code and uses {} to compile it", "-zig".bright_blue().bold(), "C".white().bold(), "Zig".white().bold());
-    // println!("\t{}: It generates and compile code with {}.", "-llvm".bright_blue().bold(), "LLVM".white().bold());
+    println!("\t{}: It generates {} code and uses {} to compile it", "-gcc".bright_blue().bold(), "C".white().bold(), "gcc".white().bold());
 }
 
 fn clear(all: bool)
@@ -93,24 +93,21 @@ fn typecheck(prog: &mut ast::Program, mut symbols: &mut SymbolTable) -> typechec
     tc
 }
 
-fn compile(c_src: &str, filename: &str, ty: &BackendType) -> std::io::Result<std::process::Output>
+fn compile(src: &str, filename: &str, ty: &BackendType) -> std::io::Result<std::process::Output>
 {
     match ty {
         BackendType::GCC => std::process::Command::new("gcc")
-                                .arg(c_src).arg("-o")
+                                .arg(src).arg("-o")
                                 .arg(format!("out/{}.exe", filename))
                                 .arg("-fopenmp")
                                 .output(),
         BackendType::ZIG => std::process::Command::new("zig")
-                                .arg("cc").arg(c_src).arg("-o")
+                                .arg("cc").arg(src).arg("-o")
                                 .arg(format!("out/{}.exe", filename))
                                 .output(),
-        BackendType::LLVM => { // this doesn't work: not yet implemented!
-            eprintln!("warning: LLVM backend is not yet implemented, falling back to GCC");
-            std::process::Command::new("gcc")
-                .arg(c_src).arg("-o")
-                .arg(format!("out/{}.exe", filename))
-                .arg("-fopenmp")
+        BackendType::LLVM => {
+            std::process::Command::new("clang")
+                .args([src, "-o", &format!("out/{}.exe", filename)])
                 .output()
         }
     }
@@ -134,26 +131,55 @@ fn build(input: String, filename: &str, dirname: &str, ty: BackendType, target: 
     tc.reporter().fire_all();
     if tc.reporter().has_errors() { std::process::exit(1); }
 
-    let mut cg = backend::c::CGenerator::new();
-    cg.process(p.output(), r.output());
-    cg.reporter().fire_all();
-    if cg.reporter().has_errors() { std::process::exit(1); }
+    let g = match ty {
+        BackendType::GCC | BackendType::ZIG => {
+            let mut cg = backend::c::CGenerator::new();
+            cg.process(p.output(), r.output());
+            cg.reporter().fire_all();
+            if cg.reporter().has_errors() { std::process::exit(1); }
+
+            cg.output().to_owned()
+        },
+        BackendType::LLVM => {
+            let ctx = inkwell::context::Context::create();
+            let mut lg = backend::llvm::LLVMGenerator::new(&ctx);
+            lg.process(p.output());
+
+            lg.output().to_owned()
+        },
+    };
 
     let _ = std::fs::create_dir("out");
-    let mut f = match File::create("out/out.c") {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("error: Could not create output file: {}", e);
-            std::process::exit(1);
+    let mut f = match ty {
+        BackendType::GCC | BackendType::ZIG => match File::create("out/out.c") {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("error: Could not create output file: {}", e);
+                std::process::exit(1);
+            }
+        },
+        BackendType::LLVM => match File::create("out/out.ll") {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("error: Could not create output file: {}", e);
+                std::process::exit(1);
+            }
         }
     };
-    let _ = f.write_all(cg.output().as_bytes());
+    let _ = f.write_all(g.as_bytes());
 
-    let output = compile("out/out.c", filename, &ty);
+    let src_file = match ty {
+        BackendType::GCC | BackendType::ZIG => "out/out.c",
+        BackendType::LLVM                   => "out/out.ll",
+    };
+    let output = compile(src_file, filename, &ty);
 
     if target == Target::Release && flag != BuildFlag::KeepCode
     {
-        let _ = std::fs::remove_file("out/out.c");
+        let _ = match ty {
+            BackendType::GCC | BackendType::ZIG => std::fs::remove_file("out/out.c"),
+            BackendType::LLVM => std::fs::remove_file("out/out.ll")
+        };
     }
 
     let status = match output {
@@ -187,7 +213,7 @@ fn main()
 
     let input = args.iter().find(|s| s.contains(".nn")).cloned().unwrap_or_default();
 
-    let mut ty     = BackendType::GCC;
+    let mut ty     = BackendType::LLVM;
     let mut target = Target::Debug;
     let mut flag   = BuildFlag::RemoveCode;
 
@@ -220,9 +246,9 @@ fn main()
         if arg_set.contains("-zig") {
             ty = BackendType::ZIG;
         }
-        // else if arg_set.contains("-llvm") {
-        //     ty = BackendType::LLVM;
-        // }
+        else if arg_set.contains("-gcc") {
+            ty = BackendType::GCC;
+        }
 
         if arg_set.contains("-rel")  { target = Target::Release; }
         if arg_set.contains("-kc")   { flag   = BuildFlag::KeepCode; }

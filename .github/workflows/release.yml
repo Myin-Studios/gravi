@@ -127,37 +127,26 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           fi
-      - name: Install dist
-        run: ${{ matrix.install_dist.run }}
-      # Get the dist-manifest
-      - name: Fetch local artifacts
-        uses: actions/download-artifact@v7
+      - name: "Install LLVM 21 (Linux/macOS)"
+        uses: "KyleMayes/install-llvm-action@v2"
+        if: "runner.os != 'Windows'"
         with:
-          pattern: artifacts-*
-          path: target/distrib/
-          merge-multiple: true
-      - name: Install dependencies
-        run: |
-          ${{ matrix.packages_install }}
-      - name: Set LLVM static linking (Linux/macOS)
-        if: runner.os != 'Windows'
-        shell: bash
+          "version": "21"
+      - name: "Set LLVM static linking (Linux/macOS)"
+        if: "runner.os != 'Windows'"
         run: |
           echo "LLVM_SYS_211_STATIC=1" >> $GITHUB_ENV
-          PREFIX=$(llvm-config --prefix 2>/dev/null || llvm-config-21 --prefix)
-          echo "LLVM_SYS_211_PREFIX=$PREFIX" >> $GITHUB_ENV
-
-      - name: Cache LLVM static build (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/cache@v4
-        id: llvm-cache
+          echo "LLVM_SYS_211_PREFIX=$LLVM_PATH" >> $GITHUB_ENV
+        shell: "bash"
+      - name: "Cache LLVM static build (Windows)"
+        id: "llvm-cache"
+        uses: "actions/cache@v4"
+        if: "runner.os == 'Windows'"
         with:
-          path: C:\llvm-static
-          key: llvm-21.1.0-static-windows-x64-v1
-
-      - name: Build LLVM statically (Windows, solo prima volta)
-        if: runner.os == 'Windows' && steps.llvm-cache.outputs.cache-hit != 'true'
-        shell: pwsh
+          "key": "llvm-21.1.0-static-windows-x64-v1"
+          "path": "C:\\llvm-static"
+      - name: "Build LLVM statically (Windows, solo prima volta)"
+        if: "runner.os == 'Windows' && steps.llvm-cache.outputs.cache-hit != 'true'"
         run: |
           $ver = "21.1.0"
           Invoke-WebRequest `
@@ -175,13 +164,25 @@ jobs:
             -DLLVM_TARGETS_TO_BUILD="X86;AArch64" `
             -DCMAKE_INSTALL_PREFIX="C:\llvm-static"
           cmake --build llvm-build --config Release --target install -- /m
-
-      - name: Set LLVM static prefix (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
+        shell: "pwsh"
+      - name: "Set LLVM static prefix (Windows)"
+        if: "runner.os == 'Windows'"
         run: |
           echo "LLVM_SYS_211_PREFIX=C:/llvm-static" >> $GITHUB_ENV
           echo "LLVM_SYS_211_STATIC=1" >> $GITHUB_ENV
+        shell: "bash"
+      - name: Install dist
+        run: ${{ matrix.install_dist.run }}
+      # Get the dist-manifest
+      - name: Fetch local artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: artifacts-*
+          path: target/distrib/
+          merge-multiple: true
+      - name: Install dependencies
+        run: |
+          ${{ matrix.packages_install }}
       - name: Build artifacts
         run: |
           # Actually do builds and make zips and whatnot

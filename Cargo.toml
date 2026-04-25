@@ -17,7 +17,5 @@ eula = false
 colored = "3.1.1"
 inkwell = { version = "0.8", features = ["llvm21-1"] }
 
-# The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
-lto = "thin"

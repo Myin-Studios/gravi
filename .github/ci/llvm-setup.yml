@@ -1,27 +1,30 @@
-- name: Install LLVM 21 (Linux/macOS)
-  if: runner.os != 'Windows'
-  uses: KyleMayes/install-llvm-action@v2
+- name: "Install LLVM 21 (Linux)"
+  uses: "KyleMayes/install-llvm-action@v2"
+  if: "runner.os == 'Linux'"
   with:
-    version: "21"
-
-- name: Set LLVM static linking (Linux/macOS)
-  if: runner.os != 'Windows'
-  shell: bash
+    "version": "21"
+- name: "Set LLVM static linking (Linux)"
+  if: "runner.os == 'Linux'"
   run: |
     echo "LLVM_SYS_211_STATIC=1" >> $GITHUB_ENV
     echo "LLVM_SYS_211_PREFIX=$LLVM_PATH" >> $GITHUB_ENV
-
-- name: Cache LLVM static build (Windows)
-  if: runner.os == 'Windows'
-  uses: actions/cache@v4
-  id: llvm-cache
+  shell: "bash"
+- name: "Install LLVM 21 (macOS)"
+  if: "runner.os == 'macOS'"
+  run: |
+    brew install llvm@21 || true
+    echo "LLVM_SYS_211_STATIC=1" >> $GITHUB_ENV
+    echo "LLVM_SYS_211_PREFIX=$(brew --prefix llvm@21)" >> $GITHUB_ENV
+  shell: "bash"
+- name: "Cache LLVM static build (Windows)"
+  id: "llvm-cache"
+  uses: "actions/cache@v4"
+  if: "runner.os == 'Windows'"
   with:
-    path: C:\llvm-static
-    key: llvm-21.1.0-static-windows-x64-v1
-
-- name: Build LLVM statically (Windows, solo prima volta)
-  if: runner.os == 'Windows' && steps.llvm-cache.outputs.cache-hit != 'true'
-  shell: pwsh
+    "key": "llvm-21.1.0-static-windows-x64-v2"
+    "path": "C:\\llvm-static"
+- name: "Build LLVM statically (Windows)"
+  if: "runner.os == 'Windows' && steps.llvm-cache.outputs.cache-hit != 'true'"
   run: |
     $ver = "21.1.0"
     Invoke-WebRequest `
@@ -31,6 +34,7 @@
     cmake `
       -S "llvm-project-llvmorg-$ver/llvm" -B llvm-build `
       -DCMAKE_BUILD_TYPE=Release `
+      -DLLVM_USE_CRT_RELEASE=MT `
       -DBUILD_SHARED_LIBS=OFF `
       -DLLVM_BUILD_LLVM_DYLIB=OFF `
       -DLLVM_INCLUDE_TESTS=OFF `
@@ -39,10 +43,10 @@
       -DLLVM_TARGETS_TO_BUILD="X86;AArch64" `
       -DCMAKE_INSTALL_PREFIX="C:\llvm-static"
     cmake --build llvm-build --config Release --target install -- /m
-
-- name: Set LLVM static prefix (Windows)
-  if: runner.os == 'Windows'
-  shell: bash
+  shell: "pwsh"
+- name: "Set LLVM static prefix (Windows)"
+  if: "runner.os == 'Windows'"
   run: |
     echo "LLVM_SYS_211_PREFIX=C:/llvm-static" >> $GITHUB_ENV
     echo "LLVM_SYS_211_STATIC=1" >> $GITHUB_ENV
+  shell: "bash"

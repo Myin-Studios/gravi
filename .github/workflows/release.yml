@@ -139,16 +139,13 @@ jobs:
       - name: Install dependencies
         run: |
           ${{ matrix.packages_install }}
-            - name: Install LLVM (Linux/macOS)
-        if: runner.os != 'Windows'
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: "18"
-
-      - name: Enable static linking (Linux/macOS)
+      - name: Set LLVM static linking (Linux/macOS)
         if: runner.os != 'Windows'
         shell: bash
-        run: echo "LLVM_SYS_180_STATIC=1" >> $GITHUB_ENV
+        run: |
+          echo "LLVM_SYS_211_STATIC=1" >> $GITHUB_ENV
+          PREFIX=$(llvm-config --prefix 2>/dev/null || llvm-config-21 --prefix)
+          echo "LLVM_SYS_211_PREFIX=$PREFIX" >> $GITHUB_ENV
 
       - name: Cache LLVM static build (Windows)
         if: runner.os == 'Windows'
@@ -156,13 +153,13 @@ jobs:
         id: llvm-cache
         with:
           path: C:\llvm-static
-          key: llvm-18-static-windows-x64-v1
+          key: llvm-21.1.0-static-windows-x64-v1
 
       - name: Build LLVM statically (Windows, solo prima volta)
         if: runner.os == 'Windows' && steps.llvm-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          $ver = "18.1.8"
+          $ver = "21.1.0"
           Invoke-WebRequest `
             "https://github.com/llvm/llvm-project/archive/llvmorg-$ver.tar.gz" `
             -OutFile llvm.tar.gz
@@ -183,8 +180,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          echo "LLVM_SYS_180_PREFIX=C:/llvm-static" >> $GITHUB_ENV
-          echo "LLVM_SYS_180_STATIC=1" >> $GITHUB_ENV
+          echo "LLVM_SYS_211_PREFIX=C:/llvm-static" >> $GITHUB_ENV
+          echo "LLVM_SYS_211_STATIC=1" >> $GITHUB_ENV
       - name: Build artifacts
         run: |
           # Actually do builds and make zips and whatnot

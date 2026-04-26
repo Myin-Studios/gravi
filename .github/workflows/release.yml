@@ -169,8 +169,8 @@ jobs:
             -DLLVM_INCLUDE_EXAMPLES=OFF `
             -DLLVM_INCLUDE_BENCHMARKS=OFF `
             -DLLVM_TARGETS_TO_BUILD="X86;AArch64" `
+            -DLLVM_TARGETS_TO_BUILD="all" `
             -DCMAKE_INSTALL_PREFIX="C:\llvm-static"
-            -DLLVM_TARGETS_TO_BUILD="all"
           cmake --build llvm-build --config Release --target install -- /m
         shell: "pwsh"
       - name: "Set LLVM static prefix (Windows)"

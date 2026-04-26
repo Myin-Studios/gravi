@@ -1,13 +1,12 @@
 - name: "Install LLVM 21 (Linux)"
-  uses: "KyleMayes/install-llvm-action@v2"
-  if: "runner.os == 'Linux'"
-  with:
-    "version": "21"
-- name: "Set LLVM static linking (Linux)"
   if: "runner.os == 'Linux'"
   run: |
+    wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+    sudo add-apt-repository "deb http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-21 main"
+    sudo apt-get update -qq
+    sudo apt-get install -y llvm-21-dev libpolly-21-dev
     echo "LLVM_SYS_211_STATIC=1" >> $GITHUB_ENV
-    echo "LLVM_SYS_211_PREFIX=$LLVM_PATH" >> $GITHUB_ENV
+    echo "LLVM_SYS_211_PREFIX=/usr/lib/llvm-21" >> $GITHUB_ENV
   shell: "bash"
 - name: "Install LLVM 21 (macOS)"
   if: "runner.os == 'macOS'"
@@ -21,7 +20,7 @@
   uses: "actions/cache@v4"
   if: "runner.os == 'Windows'"
   with:
-    "key": "llvm-21.1.0-static-windows-x64-v2"
+    "key": "llvm-21.1.0-static-windows-x64-v3"
     "path": "C:\\llvm-static"
 - name: "Build LLVM statically (Windows)"
   if: "runner.os == 'Windows' && steps.llvm-cache.outputs.cache-hit != 'true'"
@@ -34,7 +33,7 @@
     cmake `
       -S "llvm-project-llvmorg-$ver/llvm" -B llvm-build `
       -DCMAKE_BUILD_TYPE=Release `
-      -DLLVM_USE_CRT_RELEASE=MT `
+      -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
       -DBUILD_SHARED_LIBS=OFF `
       -DLLVM_BUILD_LLVM_DYLIB=OFF `
       -DLLVM_INCLUDE_TESTS=OFF `

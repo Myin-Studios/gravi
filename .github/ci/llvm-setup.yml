@@ -20,7 +20,7 @@
   uses: "actions/cache@v4"
   if: "runner.os == 'Windows'"
   with:
-    "key": "llvm-21.1.0-static-windows-x64-v3"
+    "key": "llvm-21.1.0-static-windows-x64-v4"
     "path": "C:\\llvm-static"
 - name: "Build LLVM statically (Windows)"
   if: "runner.os == 'Windows' && steps.llvm-cache.outputs.cache-hit != 'true'"
@@ -41,6 +41,7 @@
       -DLLVM_INCLUDE_BENCHMARKS=OFF `
       -DLLVM_TARGETS_TO_BUILD="X86;AArch64" `
       -DCMAKE_INSTALL_PREFIX="C:\llvm-static"
+      -DLLVM_TARGETS_TO_BUILD="all"
     cmake --build llvm-build --config Release --target install -- /m
   shell: "pwsh"
 - name: "Set LLVM static prefix (Windows)"
